@@ -1,0 +1,5 @@
+secrets/*
+!secrets/README.md
+dist/
+__pycache__/
+*.pyc

@@ -1,0 +1,15 @@
+{
+  "name": "TrackMyShows",
+  "short_name": "Shows",
+  "description": "Where you're at in every show, synced with your Kodi boxes.",
+  "start_url": "./#/watching",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1120",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

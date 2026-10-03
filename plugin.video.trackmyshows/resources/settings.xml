@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings>
+    <category label="General">
+        <setting id="device_name" type="text" label="Name of this TV (shown in the phone app)" default=""/>
+        <setting id="threshold" type="slider" label="Count as watched after (% of runtime)" default="85" range="50,5,100" option="int"/>
+        <setting id="min_minutes" type="slider" label="Ignore videos shorter than (minutes)" default="5" range="0,1,30" option="int"/>
+        <setting id="nextup_click" type="enum" label="Selecting a show in Where was I?" values="Play next episode (Premiumize if it has it, otherwise Seren)|Play next episode in Seren, choosing the source|Open the show in Seren|Browse episodes here" default="0"/>
+        <setting id="sync_interval" type="slider" label="Sync with Google Drive every (minutes)" default="15" range="5,5,120" option="int"/>
+    </category>
+    <category label="Google Drive sync">
+        <setting label="Sign in to Google" type="action" action="RunPlugin(plugin://plugin.video.trackmyshows/?action=signin)"/>
+        <setting label="Sync now" type="action" action="RunPlugin(plugin://plugin.video.trackmyshows/?action=syncnow)"/>
+        <setting label="Sign out of Google" type="action" action="RunPlugin(plugin://plugin.video.trackmyshows/?action=signout)"/>
+    </category>
+    <category label="Advanced">
+        <setting type="lsep" label="Leave these blank to use the keys built into the add-on"/>
+        <setting id="google_client_id" type="text" label="Google OAuth client ID" default=""/>
+        <setting id="google_client_secret" type="text" option="hidden" label="Google OAuth client secret" default=""/>
+        <setting id="tmdb_api_key" type="text" label="TMDb API key" default=""/>
+        <setting id="premiumize_token" type="text" option="hidden" label="Premiumize API key (blank = use Seren's login)" default=""/>
+        <setting id="debug" type="bool" label="Verbose logging" default="false"/>
+    </category>
+</settings>

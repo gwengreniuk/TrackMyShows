@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="plugin.video.trackmyshows" name="TrackMyShows" version="0.1.6" provider-name="Garrett">
+    <requires>
+        <import addon="xbmc.python" version="3.0.1"/>
+    </requires>
+    <extension point="xbmc.service" library="service.py" start="login"/>
+    <extension point="xbmc.python.pluginsource" library="default.py">
+        <provides>video</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">Remembers what you've watched, across all your Kodi boxes.</summary>
+        <description lang="en_GB">Records episodes and movies you watch (including from Seren and Premiumize cloud files), syncs the history through your own Google Drive, and shows where you left off in every show.</description>
+        <platform>all</platform>
+        <license>MIT</license>
+        <assets>
+            <icon>resources/icon.png</icon>
+        </assets>
+    </extension>
+</addon>
