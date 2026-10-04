@@ -18,7 +18,7 @@ const app = {
   showFilter: 'active',
   search: { q: '', results: [], busy: false },
   msearch: { q: '', results: [], busy: false },
-  disc: { list: 'trending_tv', pages: {}, items: {}, busy: false, error: null },
+  disc: { list: 'trending_tv', pages: {}, items: {}, busy: false, error: null, showFilters: false },
   movieInfo: new Map(),
   scores: new Map(), // imdb id -> OMDb ratings
   credits: new Map(), // show id -> aggregate cast
@@ -86,6 +86,7 @@ async function loadSettings() {
     signedInBefore: await db.kvGet('google_signed_in', false),
     lastTv: await db.kvGet('last_tv', null),
     watchView: await db.kvGet('watch_view', 'cards'),
+    discFilters: await db.kvGet('disc_filters', { include: [], exclude: [], minRating: 0, maxCert: '', avoid: [] }),
   };
   tmdb.setKey(app.settings.tmdbKey);
   omdb.setKey(app.settings.omdbKey);
@@ -915,11 +916,17 @@ async function loadDiscover(list, more = false) {
   if (d.busy || !tmdb.hasKey()) return;
   const page = more ? (d.pages[list] || 1) + 1 : 1;
   if (!more && d.items[list]) return;
+  const gen = d.gen || 0; // filters changed while loading -> drop this result
   d.busy = true;
   d.error = null;
   renderSearchResults();
   try {
-    const { results, totalPages } = await tmdb.discover(list, page, app.settings.region);
+    const { results, totalPages } = await tmdb.discover(list, page, app.settings.region, app.settings.discFilters);
+    if (gen !== (d.gen || 0)) {
+      d.busy = false;
+      renderSearchResults();
+      return;
+    }
     d.items[list] = more ? [...(d.items[list] || []), ...results] : results;
     d.pages[list] = page;
     d.total = { ...(d.total || {}), [list]: totalPages };
@@ -954,6 +961,47 @@ function discoverItem(r, kind) {
   </article>`;
 }
 
+function filterPanel() {
+  const f = app.settings.discFilters;
+  const genreChip = (g) => {
+    const state = f.include.includes(g.name) ? 'inc' : f.exclude.includes(g.name) ? 'exc' : '';
+    const mark = state === 'inc' ? '✓ ' : state === 'exc' ? '✕ ' : '';
+    return `<button type="button" class="chip fchip ${state}" data-action="fGenre" data-g="${esc(g.name)}">${mark}${esc(g.name)}</button>`;
+  };
+  const seg = (action, value, options) => `<div class="seg">${options.map(([v, label]) =>
+    `<button type="button" class="${String(value) === String(v) ? 'on' : ''}" data-action="${action}" data-v="${v}">${label}</button>`).join('')}</div>`;
+  return `<div class="filters">
+    <div class="fhead"><b>Genres</b><span class="muted small">tap once: only these · twice: hide</span></div>
+    <div class="fwrap">${tmdb.GENRES.map(genreChip).join('')}</div>
+    <div class="fhead"><b>Minimum rating</b></div>
+    ${seg('fRating', f.minRating, [[0, 'Any'], [6, '6+'], [7, '7+'], [8, '8+']])}
+    <div class="fhead"><b>Movie age rating</b><span class="muted small">US ratings · movies only</span></div>
+    ${seg('fCert', f.maxCert, [['', 'Any'], ...tmdb.CERTS.map((c) => [c, `≤ ${c}`])])}
+    <div class="fhead"><b>Avoid content</b><span class="muted small">uses TMDb tags · may miss some</span></div>
+    <div class="fwrap">${tmdb.CONTENT_TAGS.map((t) => `<button type="button" class="chip fchip ${f.avoid.includes(t.key) ? 'exc' : ''}" data-action="fAvoid" data-k="${t.key}">${f.avoid.includes(t.key) ? '✕ ' : ''}${esc(t.label)}</button>`).join('')}</div>
+    <div class="factions">
+      <button type="button" class="link" data-action="fClear">Clear all</button>
+      <button type="button" class="btn small primary" data-action="fDone">Done</button>
+    </div>
+  </div>`;
+}
+
+async function setFilters(mutate) {
+  const f = app.settings.discFilters;
+  mutate(f);
+  await db.kvSet('disc_filters', f);
+  app.disc.items = {}; // refetch every list with the new filters
+  app.disc.pages = {};
+  app.disc.gen = (app.disc.gen || 0) + 1;
+  app.disc.busy = false; // let the new request start; the stale one is ignored when it lands
+  renderSearchResults();
+}
+
+function filterCount() {
+  const f = app.settings.discFilters;
+  return f.include.length + f.exclude.length + (f.minRating ? 1 : 0) + (f.maxCert ? 1 : 0) + f.avoid.length;
+}
+
 function renderDiscover(box) {
   const d = app.disc;
   const chips = Object.entries(tmdb.DISCOVER_LISTS).map(([key, l]) =>
@@ -968,7 +1016,11 @@ function renderDiscover(box) {
   else if (!all) body = '<p class="muted pad">Loading…</p>';
   else if (!visible.length) body = '<p class="muted pad">Nothing new here. Try loading more.</p>';
   else body = visible.map((r) => discoverItem(r, meta.kind)).join('');
-  box.innerHTML = `<div class="chips">${chips}</div>${body}
+  const n = filterCount();
+  const note = d.list === 'trending_tv' && n ? '<p class="muted small pad">With filters on, this shows popular shows airing in the last month.</p>' : '';
+  box.innerHTML = `<div class="chips">${chips}</div>
+    <div class="fbar"><button type="button" class="btn small${n ? ' primary' : ''}" data-action="fToggle">⚙ Filters${n ? ` (${n})` : ''}</button></div>
+    ${d.showFilters ? filterPanel() : ''}${note}${body}
     ${canMore ? `<button type="button" class="btn wide" data-action="discMore20" ${d.busy ? 'disabled' : ''}>${d.busy ? 'Loading…' : 'Load more'}</button>` : ''}`;
 }
 
@@ -1155,6 +1207,20 @@ const actions = {
   playTv: (d) => playOnTv(+d.id, +d.s, +d.e),
   addMovie: (d) => addMovie(JSON.parse(d.m)),
   discList: (d) => { app.disc.list = d.l; renderSearchResults(); },
+  fToggle: () => { app.disc.showFilters = !app.disc.showFilters; renderSearchResults(); },
+  fDone: () => { app.disc.showFilters = false; renderSearchResults(); },
+  fGenre: (d) => setFilters((f) => {
+    const g = d.g;
+    if (f.include.includes(g)) { f.include = f.include.filter((x) => x !== g); f.exclude.push(g); }
+    else if (f.exclude.includes(g)) f.exclude = f.exclude.filter((x) => x !== g);
+    else f.include.push(g);
+  }),
+  fRating: (d) => setFilters((f) => { f.minRating = Number(d.v); }),
+  fCert: (d) => setFilters((f) => { f.maxCert = d.v; }),
+  fAvoid: (d) => setFilters((f) => {
+    f.avoid = f.avoid.includes(d.k) ? f.avoid.filter((x) => x !== d.k) : [...f.avoid, d.k];
+  }),
+  fClear: () => setFilters((f) => Object.assign(f, { include: [], exclude: [], minRating: 0, maxCert: '', avoid: [] })),
   discMore20: () => loadDiscover(app.disc.list, true),
   discAdd: (d) => {
     const p = JSON.parse(d.p);

@@ -59,20 +59,89 @@ export const DISCOVER_LISTS = {
   top_movies: { label: 'Top rated movies', kind: 'movie' },
 };
 
+// Genre groups shown in Filters, with TMDb's ids for movies and for TV (their genre lists differ).
+export const GENRES = [
+  { name: 'Drama', movie: [18], tv: [18] },
+  { name: 'Crime', movie: [80], tv: [80] },
+  { name: 'Comedy', movie: [35], tv: [35] },
+  { name: 'Action & Adventure', movie: [28, 12], tv: [10759] },
+  { name: 'Thriller', movie: [53], tv: [] },
+  { name: 'Mystery', movie: [9648], tv: [9648] },
+  { name: 'Sci-Fi & Fantasy', movie: [878, 14], tv: [10765] },
+  { name: 'Horror', movie: [27], tv: [] },
+  { name: 'Romance', movie: [10749], tv: [] },
+  { name: 'War & History', movie: [10752, 36], tv: [10768] },
+  { name: 'Western', movie: [37], tv: [37] },
+  { name: 'Documentary', movie: [99], tv: [99] },
+  { name: 'Animation', movie: [16], tv: [16] },
+  { name: 'Family & Kids', movie: [10751], tv: [10751, 10762] },
+  { name: 'Reality', movie: [], tv: [10764] },
+  { name: 'Music', movie: [10402], tv: [] },
+];
+
+// "Avoid content" groups -> TMDb keyword ids. Community-tagged, so best effort.
+export const CONTENT_TAGS = [
+  { key: 'violence', label: 'Violence & gore', ids: [312898, 367145, 10292, 13006] },
+  { key: 'drugs', label: 'Drugs', ids: [14964, 11494, 1803, 2150, 2671] },
+  { key: 'nudity', label: 'Nudity & sex', ids: [281741, 359980, 380475, 354470, 329280] },
+  { key: 'suicide', label: 'Suicide & self-harm', ids: [236, 1252, 233130] },
+  { key: 'assault', label: 'Sexual assault', ids: [570, 190327] },
+  { key: 'childabuse', label: 'Child abuse', ids: [516] },
+  { key: 'domestic', label: 'Domestic violence', ids: [11925] },
+  { key: 'animals', label: 'Animal cruelty', ids: [205685] },
+  { key: 'alcohol', label: 'Alcoholism', ids: [7464] },
+];
+
+export const CERTS = ['G', 'PG', 'PG-13', 'R'];
+
+export const filtersActive = (f) => !!f && !!((f.include || []).length || (f.exclude || []).length || f.minRating
+  || f.maxCert || (f.avoid || []).length);
+
+function applyFilters(params, kind, f) {
+  if (!filtersActive(f)) return;
+  const ids = (names) => names.flatMap((n) => GENRES.find((g) => g.name === n)?.[kind] || []);
+  const inc = ids(f.include || []);
+  if (inc.length) params.with_genres = inc.join('|'); // any of the chosen genres
+  const exc = [...new Set([...(params.without_genres ? String(params.without_genres).split(',').map(Number) : []),
+                           ...ids(f.exclude || [])])];
+  if (exc.length) params.without_genres = exc.join(',');
+  if (f.minRating) {
+    params['vote_average.gte'] = Math.max(Number(params['vote_average.gte'] || 0), f.minRating);
+    params['vote_count.gte'] = Math.max(Number(params['vote_count.gte'] || 0), 50);
+  }
+  if (f.maxCert && kind === 'movie') {
+    params.certification_country = 'US';
+    params['certification.lte'] = f.maxCert;
+  }
+  const avoid = (f.avoid || []).flatMap((k) => CONTENT_TAGS.find((t) => t.key === k)?.ids || []);
+  if (avoid.length) params.without_keywords = avoid.join(','); // excludes anything with any of them
+}
+
 /** One page of a Discover list: {results, totalPages}. */
-export async function discover(list, page = 1, region = 'US') {
+export async function discover(list, page = 1, region = 'US', filters = null) {
   const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const DAY_MS = 24 * HOUR;
   const today = isoDay(Date.now());
+  const kind = DISCOVER_LISTS[list].kind;
   let path;
   const params = { page };
   if (list === 'trending_tv') {
-    path = '/trending/tv/week';
+    if (filtersActive(filters)) {
+      // TMDb's trending list can't be filtered: use popular shows with episodes airing in the last month
+      path = '/discover/tv';
+      Object.assign(params, { sort_by: 'popularity.desc', 'air_date.gte': isoDay(Date.now() - 30 * DAY_MS),
+                              'air_date.lte': today, without_genres: '10763,10767' });
+    } else {
+      path = '/trending/tv/week';
+    }
   } else if (list === 'now_playing') {
-    path = '/movie/now_playing';
-    params.region = region;
+    path = '/discover/movie';
+    Object.assign(params, { region, sort_by: 'popularity.desc', with_release_type: '2|3',
+                            'release_date.gte': isoDay(Date.now() - 42 * DAY_MS), 'release_date.lte': today });
   } else if (list === 'upcoming_movies') {
-    path = '/movie/upcoming';
-    params.region = region;
+    path = '/discover/movie';
+    Object.assign(params, { region, sort_by: 'popularity.desc', with_release_type: '2|3',
+                            'release_date.gte': isoDay(Date.now() + DAY_MS), 'release_date.lte': isoDay(Date.now() + 180 * DAY_MS) });
   } else if (list === 'top_tv') {
     // Highly rated at any age; popularity order so well-loved titles come before obscure ones
     path = '/discover/tv';
@@ -83,12 +152,9 @@ export async function discover(list, page = 1, region = 'US') {
     Object.assign(params, { sort_by: 'popularity.desc', 'vote_average.gte': 7.6, 'vote_count.gte': 1500,
                             'primary_release_date.lte': today });
   }
+  applyFilters(params, kind, filters);
   const data = (await get(path, params, 6 * HOUR)) || {};
-  let results = data.results || [];
-  if (list === 'upcoming_movies') {
-    results = results.filter((r) => (r.release_date || '') >= today); // TMDb order = most anticipated first
-  }
-  return { results, totalPages: data.total_pages || 1 };
+  return { results: data.results || [], totalPages: Math.min(data.total_pages || 1, 500) };
 }
 
 /** Cached-only lookup (no network). */

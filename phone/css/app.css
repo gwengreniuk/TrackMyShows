@@ -237,6 +237,15 @@ a { color: var(--accent); }
 a.guest { color: var(--text); text-decoration: none; }
 
 /* ---- discover -------------------------------------------------------- */
+.fbar { display: flex; justify-content: flex-end; margin: -4px 0 8px; }
+.filters { background: var(--surface); border-radius: 12px; padding: 4px 12px 12px; margin-bottom: 12px; }
+.fhead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 12px 0 6px; flex-wrap: wrap; }
+.fwrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.fchip { padding: 6px 11px; font-size: 13px; }
+.fchip.inc { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+.fchip.exc { background: transparent; color: var(--danger); border-color: var(--danger); text-decoration: line-through; }
+.filters .seg { flex-wrap: wrap; }
+.factions { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
 .row.disc { align-items: flex-start; }
 .row.disc .thumb { margin-top: 2px; }
 .disc-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; }
