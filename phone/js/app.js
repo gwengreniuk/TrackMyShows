@@ -23,6 +23,7 @@ const app = {
   scores: new Map(), // imdb id -> OMDb ratings
   openSeasons: new Set(),
   lastRoute: '',
+  scrollPos: {}, // route -> scroll position, so Back returns to the same spot
   eventCount: 0,
 };
 
@@ -442,8 +443,8 @@ function render() {
     if (r.name === 'movies') renderMovieResults();
   }
   app.lastRoute = key;
-  if (sameRoute) window.scrollTo(0, scroll);
-  else window.scrollTo(0, 0);
+  // Same page: keep position. Coming back to a list: return to where you were. New page: top.
+  window.scrollTo(0, sameRoute ? scroll : (app.scrollPos[key] || 0));
   renderHeader();
 }
 
@@ -1108,7 +1109,9 @@ view.addEventListener('submit', async (ev) => {
 });
 
 document.getElementById('syncBtn').addEventListener('click', () => runSync(true));
+history.scrollRestoration = 'manual'; // we restore positions ourselves
 window.addEventListener('hashchange', () => {
+  if (app.lastRoute) app.scrollPos[app.lastRoute] = window.scrollY; // remember where we left this page
   if (route().name !== 'show') app.openedFor = null;
   render();
 });
