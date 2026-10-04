@@ -75,6 +75,18 @@ function renderSoon() {
 }
 
 // ---------------------------------------------------------------- data
+function migrateFilters(f) {
+  const out = { include: [], exclude: [], minRating: 0, certs: {}, content: {}, ...(f || {}) };
+  for (const key of out.avoid || []) out.content[key] = 'without'; // older "avoid" list
+  if (out.maxCert) { // older "up to" rating
+    const allowed = tmdb.CERTS.slice(0, tmdb.CERTS.indexOf(out.maxCert) + 1);
+    for (const c of allowed) out.certs[c] = 'with';
+  }
+  delete out.avoid;
+  delete out.maxCert;
+  return out;
+}
+
 async function loadSettings() {
   const region = (navigator.language.split('-')[1] || 'US').toUpperCase();
   app.settings = {
@@ -86,7 +98,7 @@ async function loadSettings() {
     signedInBefore: await db.kvGet('google_signed_in', false),
     lastTv: await db.kvGet('last_tv', null),
     watchView: await db.kvGet('watch_view', 'cards'),
-    discFilters: await db.kvGet('disc_filters', { include: [], exclude: [], minRating: 0, maxCert: '', avoid: [] }),
+    discFilters: migrateFilters(await db.kvGet('disc_filters', null)),
   };
   tmdb.setKey(app.settings.tmdbKey);
   omdb.setKey(app.settings.omdbKey);
@@ -961,6 +973,14 @@ function discoverItem(r, kind) {
   </article>`;
 }
 
+function triChip(action, value, label, state) {
+  const cls = state === 'with' ? 'inc' : state === 'without' ? 'exc' : '';
+  const prefix = state === 'with' ? '✓ ' : state === 'without' ? '✕ ' : '';
+  return `<button type="button" class="chip fchip ${cls}" data-action="${action}" data-v="${esc(value)}">${prefix}${esc(label)}</button>`;
+}
+
+const cycle = (state) => (state === 'with' ? 'without' : state === 'without' ? undefined : 'with');
+
 function filterPanel() {
   const f = app.settings.discFilters;
   const genreChip = (g) => {
@@ -976,9 +996,10 @@ function filterPanel() {
     <div class="fhead"><b>Minimum rating</b></div>
     ${seg('fRating', f.minRating, [[0, 'Any'], [6, '6+'], [7, '7+'], [8, '8+']])}
     <div class="fhead"><b>Movie age rating</b><span class="muted small">US ratings · movies only</span></div>
-    ${seg('fCert', f.maxCert, [['', 'Any'], ...tmdb.CERTS.map((c) => [c, `≤ ${c}`])])}
-    <div class="fhead"><b>Avoid content</b><span class="muted small">uses TMDb tags · may miss some</span></div>
-    <div class="fwrap">${tmdb.CONTENT_TAGS.map((t) => `<button type="button" class="chip fchip ${f.avoid.includes(t.key) ? 'exc' : ''}" data-action="fAvoid" data-k="${t.key}">${f.avoid.includes(t.key) ? '✕ ' : ''}${esc(t.label)}</button>`).join('')}</div>
+    <div class="fwrap">${tmdb.CERTS.map((c) => triChip('fCert', c, c === 'NR' ? 'Not rated' : c, f.certs[c])).join('')}</div>
+    <div class="fhead"><b>Content</b><span class="muted small">TMDb tags · may miss some</span></div>
+    <div class="fwrap">${tmdb.CONTENT_TAGS.map((t) => triChip('fContent', t.key, t.label, f.content[t.key])).join('')}</div>
+    <p class="muted small fhint">Tap once: <b>with</b> it · twice: <b>without</b> it · three times: off</p>
     <div class="factions">
       <button type="button" class="link" data-action="fClear">Clear all</button>
       <button type="button" class="btn small primary" data-action="fDone">Done</button>
@@ -999,7 +1020,7 @@ async function setFilters(mutate) {
 
 function filterCount() {
   const f = app.settings.discFilters;
-  return f.include.length + f.exclude.length + (f.minRating ? 1 : 0) + (f.maxCert ? 1 : 0) + f.avoid.length;
+  return f.include.length + f.exclude.length + (f.minRating ? 1 : 0) + Object.keys(f.certs).length + Object.keys(f.content).length;
 }
 
 function renderDiscover(box) {
@@ -1216,11 +1237,15 @@ const actions = {
     else f.include.push(g);
   }),
   fRating: (d) => setFilters((f) => { f.minRating = Number(d.v); }),
-  fCert: (d) => setFilters((f) => { f.maxCert = d.v; }),
-  fAvoid: (d) => setFilters((f) => {
-    f.avoid = f.avoid.includes(d.k) ? f.avoid.filter((x) => x !== d.k) : [...f.avoid, d.k];
+  fCert: (d) => setFilters((f) => {
+    const next = cycle(f.certs[d.v]);
+    if (next) f.certs[d.v] = next; else delete f.certs[d.v];
   }),
-  fClear: () => setFilters((f) => Object.assign(f, { include: [], exclude: [], minRating: 0, maxCert: '', avoid: [] })),
+  fContent: (d) => setFilters((f) => {
+    const next = cycle(f.content[d.v]);
+    if (next) f.content[d.v] = next; else delete f.content[d.v];
+  }),
+  fClear: () => setFilters((f) => Object.assign(f, { include: [], exclude: [], minRating: 0, certs: {}, content: {} })),
   discMore20: () => loadDiscover(app.disc.list, true),
   discAdd: (d) => {
     const p = JSON.parse(d.p);

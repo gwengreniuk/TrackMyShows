@@ -79,8 +79,9 @@ export const GENRES = [
   { name: 'Music', movie: [10402], tv: [] },
 ];
 
-// "Avoid content" groups -> TMDb keyword ids. Community-tagged, so best effort.
+// Content tag groups -> TMDb keyword ids. Community-tagged, so best effort.
 export const CONTENT_TAGS = [
+  { key: 'smoking', label: 'Smoking', ids: [919, 302633, 3170, 11333] },
   { key: 'violence', label: 'Violence & gore', ids: [312898, 367145, 10292, 13006] },
   { key: 'drugs', label: 'Drugs', ids: [14964, 11494, 1803, 2150, 2671] },
   { key: 'nudity', label: 'Nudity & sex', ids: [281741, 359980, 380475, 354470, 329280] },
@@ -92,12 +93,13 @@ export const CONTENT_TAGS = [
   { key: 'alcohol', label: 'Alcoholism', ids: [7464] },
 ];
 
-export const CERTS = ['G', 'PG', 'PG-13', 'R'];
+// US movie certifications; NR = not rated
+export const CERTS = ['G', 'PG', 'PG-13', 'R', 'NC-17', 'NR'];
 
 export const filtersActive = (f) => !!f && !!((f.include || []).length || (f.exclude || []).length || f.minRating
-  || f.maxCert || (f.avoid || []).length);
+  || Object.keys(f.certs || {}).length || Object.keys(f.content || {}).length);
 
-function applyFilters(params, kind, f) {
+export function applyFilters(params, kind, f) {
   if (!filtersActive(f)) return;
   const ids = (names) => names.flatMap((n) => GENRES.find((g) => g.name === n)?.[kind] || []);
   const inc = ids(f.include || []);
@@ -109,12 +111,21 @@ function applyFilters(params, kind, f) {
     params['vote_average.gte'] = Math.max(Number(params['vote_average.gte'] || 0), f.minRating);
     params['vote_count.gte'] = Math.max(Number(params['vote_count.gte'] || 0), 50);
   }
-  if (f.maxCert && kind === 'movie') {
+  const certs = f.certs || {};
+  const withC = CERTS.filter((c) => certs[c] === 'with');
+  const withoutC = CERTS.filter((c) => certs[c] === 'without');
+  if (kind === 'movie' && (withC.length || withoutC.length)) {
+    // "with" = only these ratings; "without" = every other rating (TMDb has no exclude for ratings)
+    const allowed = withC.length ? withC : CERTS.filter((c) => !withoutC.includes(c));
     params.certification_country = 'US';
-    params['certification.lte'] = f.maxCert;
+    params.certification = allowed.join('|');
   }
-  const avoid = (f.avoid || []).flatMap((k) => CONTENT_TAGS.find((t) => t.key === k)?.ids || []);
-  if (avoid.length) params.without_keywords = avoid.join(','); // excludes anything with any of them
+  const content = f.content || {};
+  const idsFor = (mode) => CONTENT_TAGS.filter((t) => content[t.key] === mode).flatMap((t) => t.ids);
+  const withK = idsFor('with');
+  const withoutK = idsFor('without');
+  if (withK.length) params.with_keywords = withK.join('|'); // titles tagged with any of them
+  if (withoutK.length) params.without_keywords = withoutK.join(','); // hide anything tagged with any of them
 }
 
 /** One page of a Discover list: {results, totalPages}. */

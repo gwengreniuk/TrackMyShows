@@ -108,3 +108,27 @@ test('discover hides followed, listed, watched and dismissed titles', () => {
   assert.ok(!S.alreadyKnown(state, shows, 'tv', 1399));
   assert.equal(shows.size, 1); // dismiss never creates a show
 });
+
+test('discover filters: with / without for ratings, content and genres', async () => {
+  const { applyFilters } = await import('../phone/js/tmdb.js');
+  const f = { include: ['Crime'], exclude: ['Reality'], minRating: 7, certs: { PG: 'with', 'PG-13': 'with' },
+              content: { nudity: 'with', drugs: 'without', smoking: 'without' } };
+  const p = {};
+  applyFilters(p, 'movie', f);
+  assert.equal(p.with_genres, '80');
+  assert.equal(p.certification, 'PG|PG-13');
+  assert.equal(p.certification_country, 'US');
+  assert.ok(p.with_keywords.split('|').includes('281741'));          // with nudity
+  assert.ok(p.without_keywords.split(',').includes('14964'));        // without drugs
+  assert.ok(p.without_keywords.split(',').includes('919'));          // without smoking
+  assert.equal(p['vote_average.gte'], 7);
+
+  const q = {};
+  applyFilters(q, 'movie', { certs: { PG: 'without' } });             // "not PG" = every other rating
+  assert.deepEqual(q.certification.split('|'), ['G', 'PG-13', 'R', 'NC-17', 'NR']);
+
+  const tv = { without_genres: '10763,10767' };
+  applyFilters(tv, 'tv', { exclude: ['Reality'], certs: { R: 'with' } });
+  assert.equal(tv.certification, undefined);                         // TV can't be filtered by rating
+  assert.deepEqual(tv.without_genres.split(',').map(Number).sort(), [10763, 10764, 10767]);
+});
