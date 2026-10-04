@@ -1041,6 +1041,23 @@ async function setFilters(mutate) {
   renderSearchResults();
 }
 
+function noMatches(kind) {
+  const f = app.settings.discFilters;
+  const tips = [];
+  const withTags = Object.entries(f.content).filter(([, v]) => v === 'with').map(([k]) => tmdb.CONTENT_TAGS.find((t) => t.key === k)?.label);
+  if (withTags.length) tips.push(`Few titles on TMDb are tagged “${withTags.join('”, “')}”, so “with” content filters match very little.`);
+  if (f.certs['NC-17'] === 'with' || f.certs.NR === 'with') tips.push('Very few movies are rated NC-17 or listed as not rated.');
+  if (Object.keys(f.certs).length && kind === 'movie') tips.push('Age-rated movies must have a US rating; titles not yet rated are left out.');
+  if (f.minRating >= 8) tips.push('An 8+ minimum rating is strict.');
+  if (f.include.length > 0) tips.push(`Showing only: ${f.include.join(', ')}.`);
+  return `<div class="empty-filters">
+    <p><b>No titles here match your filters.</b></p>
+    ${tips.map((t) => `<p class="muted small">${esc(t)}</p>`).join('')}
+    <div class="btns"><button type="button" class="btn small" data-action="fToggle">Change filters</button>
+    <button type="button" class="btn small" data-action="fClear">Clear filters</button></div>
+  </div>`;
+}
+
 function filterCount() {
   const f = app.settings.discFilters;
   return f.include.length + f.exclude.length + (f.minRating ? 1 : 0) + Object.keys(f.certs).length + Object.keys(f.content).length;
@@ -1055,13 +1072,21 @@ function renderDiscover(box) {
   if (!all && !d.busy && !d.error) loadDiscover(d.list);
   const visible = (all || []).filter((r) => !S.alreadyKnown(app.state, app.shows, meta.kind, r.id));
   const canMore = all && (d.pages[d.list] || 1) < ((d.total || {})[d.list] || 1);
+  // Everything on this page is already followed/listed/removed: fetch the next page automatically
+  if (all && all.length && !visible.length && canMore && !d.busy && (d.pages[d.list] || 1) < 10) {
+    setTimeout(() => loadDiscover(d.list, true), 0);
+  }
   let body;
   if (d.error) body = `<p class="error pad">${esc(d.error)}</p>`;
-  else if (!all) body = '<p class="muted pad">Loading…</p>';
-  else if (!visible.length) body = '<p class="muted pad">Nothing new here. Try loading more.</p>';
+  else if (!all || (!visible.length && canMore)) body = '<p class="muted pad">Loading…</p>';
+  else if (!all.length && filterCount()) body = noMatches(meta.kind);
+  else if (!visible.length) body = `<p class="muted pad">${all.length ? "You've already seen, added or removed everything here." : 'Nothing here right now.'}</p>`;
   else body = visible.map((r) => discoverItem(r, meta.kind)).join('');
   const n = filterCount();
-  const note = d.list === 'trending_tv' && n ? '<p class="muted small pad">With filters on, this shows popular shows airing in the last month.</p>' : '';
+  const notes = [];
+  if (d.list === 'trending_tv' && n) notes.push('With filters on, this shows popular shows airing in the last month.');
+  if (meta.kind === 'tv' && Object.keys(app.settings.discFilters.certs).length) notes.push('Age ratings apply to movies only; they are ignored for TV lists.');
+  const note = notes.map((t) => `<p class="muted small pad">${t}</p>`).join('');
   box.innerHTML = `<div class="chips">${chips}</div>
     <div class="fbar"><button type="button" class="btn small${n ? ' primary' : ''}" data-action="fToggle">⚙ Filters${n ? ` (${n})` : ''}</button></div>
     ${d.showFilters ? filterPanel() : ''}${note}${body}

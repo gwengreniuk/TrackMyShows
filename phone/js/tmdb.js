@@ -134,6 +134,8 @@ export async function discover(list, page = 1, region = 'US', filters = null) {
   const DAY_MS = 24 * HOUR;
   const today = isoDay(Date.now());
   const kind = DISCOVER_LISTS[list].kind;
+  // Age ratings are US ratings; TMDb only matches them against US releases, so use US dates then.
+  if (kind === 'movie' && Object.keys(filters?.certs || {}).length) region = 'US';
   let path;
   const params = { page };
   if (list === 'trending_tv') {
@@ -148,11 +150,13 @@ export async function discover(list, page = 1, region = 'US', filters = null) {
   } else if (list === 'now_playing') {
     path = '/discover/movie';
     Object.assign(params, { region, sort_by: 'popularity.desc', with_release_type: '2|3',
-                            'release_date.gte': isoDay(Date.now() - 42 * DAY_MS), 'release_date.lte': today });
+                            'release_date.gte': isoDay(Date.now() - 42 * DAY_MS), 'release_date.lte': today,
+                            'primary_release_date.gte': isoDay(Date.now() - 365 * DAY_MS) }); // skip re-releases of old films
   } else if (list === 'upcoming_movies') {
     path = '/discover/movie';
     Object.assign(params, { region, sort_by: 'popularity.desc', with_release_type: '2|3',
-                            'release_date.gte': isoDay(Date.now() + DAY_MS), 'release_date.lte': isoDay(Date.now() + 180 * DAY_MS) });
+                            'release_date.gte': isoDay(Date.now() + DAY_MS), 'release_date.lte': isoDay(Date.now() + 180 * DAY_MS),
+                            'primary_release_date.gte': isoDay(Date.now() - 365 * DAY_MS) }); // skip re-releases of old films
   } else if (list === 'top_tv') {
     // Highly rated at any age; popularity order so well-loved titles come before obscure ones
     path = '/discover/tv';

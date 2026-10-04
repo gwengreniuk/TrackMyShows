@@ -249,6 +249,9 @@ a.guest { color: var(--text); text-decoration: none; }
 .fchip.exc { background: transparent; color: var(--danger); border-color: var(--danger); text-decoration: line-through; }
 .filters .seg { flex-wrap: wrap; }
 .fhint { margin: 12px 0 0; }
+.empty-filters { background: var(--surface); border-radius: 12px; padding: 12px 14px; }
+.empty-filters p { margin: 0 0 6px; }
+.empty-filters .btns { margin-top: 10px; }
 .factions { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
 .row.disc { align-items: flex-start; }
 .row.disc .thumb { margin-top: 2px; }
