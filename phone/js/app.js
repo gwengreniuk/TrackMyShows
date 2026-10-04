@@ -827,8 +827,7 @@ async function openOnTv(d) {
     if (!drive.hasValidToken()) return toast(err.message);
     // Wikidata unavailable: still open the app
   }
-  if (service.prop && !serviceId) toast(`Opening ${service.label}; you'll need to search for ${d.title} there`);
-  return sendToTv(`${d.title} in ${service.label}`, { action: 'launch', app: service.key, service_id: serviceId, title: d.title, kind: d.kind });
+  return sendToTv(`${d.title} in ${service.label}`, { action: 'launch', app: service.app, service_id: serviceId, title: d.title, kind: d.kind });
 }
 
 async function ensureMovie(id) {

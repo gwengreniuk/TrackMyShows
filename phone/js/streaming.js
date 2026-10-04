@@ -1,20 +1,23 @@
-// "Open in Netflix / Prime Video / Crave / BritBox on TV".
-// Netflix and Prime Video IDs come from Wikidata (looked up by TMDb ID, cached); Crave and BritBox
-// have no public IDs, so those just open the app.
+// "Open in Netflix / Prime Video on TV" (BritBox and Crave open in Prime Video).
+// Netflix and Prime Video IDs come from Wikidata (looked up by TMDb ID, cached); without one,
+// the TV opens that app's search for the title.
 import { cacheGet, cacheSet } from './db.js';
 
+// app = which TV app opens it. BritBox and Crave are subscribed through Amazon (Prime Video Channels),
+// so they open in Prime Video too.
 export const SERVICES = [
-  { key: 'netflix', label: 'Netflix', match: /netflix/i, prop: 'P1874' },
-  { key: 'prime', label: 'Prime Video', match: /amazon prime video|^prime video/i, prop: 'P8055' },
-  { key: 'crave', label: 'Crave', match: /^crave/i, prop: null },
-  { key: 'britbox', label: 'BritBox', match: /britbox/i, prop: null },
+  { key: 'netflix', app: 'netflix', label: 'Netflix', match: /netflix/i, prop: 'P1874' },
+  { key: 'prime', app: 'prime', label: 'Prime Video', match: /amazon prime video|^prime video/i, prop: 'P8055' },
+  { key: 'britbox', app: 'prime', label: 'BritBox (Prime Video)', match: /britbox/i, prop: 'P8055' },
+  { key: 'crave', app: 'prime', label: 'Crave (Prime Video)', match: /^crave/i, prop: 'P8055' },
 ];
 
-/** Services we can open on the TV, from TMDb's "where to watch" list. */
+/** Buttons to show, from TMDb's "where to watch" list: one per TV app. */
 export function launchable(providers) {
   const out = [];
   for (const s of SERVICES) {
-    if (providers.some((p) => s.match.test(p.provider_name)) && !out.includes(s)) out.push(s);
+    if (out.some((o) => o.app === s.app)) continue; // e.g. Prime Video and BritBox both open Prime Video
+    if (providers.some((p) => s.match.test(p.provider_name))) out.push(s);
   }
   return out;
 }
@@ -43,12 +46,11 @@ export async function serviceId(service, kind, tmdbId) {
       const ent = await wikidata({ action: 'wbgetentities', ids: qid, props: 'claims' });
       const claims = ent.entities?.[qid]?.claims || {};
       for (const s of SERVICES) {
-        if (!s.prop) continue;
         const v = claims[s.prop]?.[0]?.mainsnak?.datavalue?.value;
-        if (v) ids[s.key] = String(v);
+        if (v) ids[s.app] = String(v);
       }
     }
     await cacheSet(cacheKey, ids);
   }
-  return ids[service.key] || '';
+  return ids[service.app] || '';
 }

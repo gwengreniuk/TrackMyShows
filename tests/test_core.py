@@ -545,7 +545,12 @@ class LaunchAppTests(unittest.TestCase):
         self.assertEqual(remote.android_builtin('com.netflix.ninja', 'https://www.netflix.com/title/80057281'),
                          'StartAndroidActivity("com.netflix.ninja","android.intent.action.VIEW","","https://www.netflix.com/title/80057281")')
         prime = dict(cmd, app='prime', service_id='B07QQQ52B3')
-        self.assertEqual(remote.launch_app(prime, installed)[1], 'https://watch.amazon.com/detail?asin=B07QQQ52B3')
+        self.assertEqual(remote.launch_app(prime, installed)[1], 'https://app.primevideo.com/detail?asin=B07QQQ52B3')
+        # no ID known: open the app's search (BritBox/Crave channels arrive here as app='prime')
+        self.assertEqual(remote.launch_app(dict(cmd, app='prime', service_id='', title='Sherlock'), installed)[1],
+                         'https://app.primevideo.com/search?phrase=Sherlock')
+        self.assertEqual(remote.launch_app(dict(cmd, service_id='', title="The Queen's Gambit"), installed)[1],
+                         'nflx://www.netflix.com/search?q=The%20Queen%27s%20Gambit')
         self.assertEqual(remote.launch_app(dict(cmd, app='crave', service_id=''), installed), ('ca.bellmedia.cravetv', None))
         self.assertEqual(remote.android_builtin('ca.bellmedia.cravetv'), 'StartAndroidActivity("ca.bellmedia.cravetv")')
         self.assertEqual(remote.launch_app(dict(cmd, app='britbox'), installed), (None, 'BritBox is not installed on this TV'))

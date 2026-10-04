@@ -180,7 +180,12 @@ class Remote:
                 xbmc.Player().stop()
             xbmc.executebuiltin(remote.android_builtin(package, uri))
             what = cmd.get('title') or 'the app'
-            message = 'Opening %s in %s' % (what, app['label']) if uri else 'Opened %s - search for %s there' % (app['label'], what)
+            if not uri:
+                message = 'Opened %s - search for %s there' % (app['label'], what)
+            elif '/search' in uri:
+                message = 'Searching %s for %s' % (app['label'], what)
+            else:
+                message = 'Opening %s in %s' % (what, app['label'])
             status = 'launched'
             kodi.log('phone opened %s (%s)' % (app['label'], uri or 'app home'))
         else:

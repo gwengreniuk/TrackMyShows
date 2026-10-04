@@ -7,7 +7,7 @@ device-<id>.json (which doubles as an "I'm online" heartbeat).
 """
 import json
 import time
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 
 COMMAND_MAX_AGE = 180  # seconds; older commands are ignored (e.g. Kodi was closed when it was sent)
@@ -17,13 +17,15 @@ MODES = ('auto', 'seren', 'pick')
 # Google/Android TV builds differ; the first one installed is used.
 STREAMING_APPS = {
     'netflix': {'label': 'Netflix', 'packages': ['com.netflix.ninja', 'com.netflix.mediaclient'],
-                'link': 'https://www.netflix.com/title/{id}'},
+                'link': 'https://www.netflix.com/title/{id}', 'search': 'nflx://www.netflix.com/search?q={q}'},
+    # Prime Video also opens Prime Video Channels (e.g. BritBox, Crave subscribed through Amazon)
     'prime': {'label': 'Prime Video', 'packages': ['com.amazon.firebat', 'com.amazon.amazonvideo.livingroom',
                                                    'com.amazon.avod.thirdpartyclient'],
-              'link': 'https://watch.amazon.com/detail?asin={id}'},
-    'crave': {'label': 'Crave', 'packages': ['ca.bellmedia.cravetv', 'ca.bellmedia.crave'], 'link': None},
+              'link': 'https://app.primevideo.com/detail?asin={id}',
+              'search': 'https://app.primevideo.com/search?phrase={q}'},
+    'crave': {'label': 'Crave', 'packages': ['ca.bellmedia.cravetv', 'ca.bellmedia.crave'], 'link': None, 'search': None},
     'britbox': {'label': 'BritBox', 'packages': ['com.britbox.tv', 'com.britbox.us.firetv', 'com.britbox.ca',
-                                                 'com.britbox.us', 'com.britbox.firetv'], 'link': None},
+                                                 'com.britbox.us', 'com.britbox.firetv'], 'link': None, 'search': None},
 }
 KNOWN_PACKAGES = {p for app in STREAMING_APPS.values() for p in app['packages']}
 
@@ -91,8 +93,12 @@ def launch_app(cmd, installed_packages):
     if not package:
         return None, '%s is not installed on this TV' % app['label']
     service_id = str(cmd.get('service_id') or '').strip()
-    uri = app['link'].format(id=service_id) if app['link'] and service_id else None
-    return package, uri
+    title = str(cmd.get('title') or '').strip()
+    if app['link'] and service_id:
+        return package, app['link'].format(id=quote(service_id, safe=''))
+    if app.get('search') and title:  # no ID known: open the app's search for the title
+        return package, app['search'].format(q=quote(title, safe=''))
+    return package, None
 
 
 def android_builtin(package, uri=None):

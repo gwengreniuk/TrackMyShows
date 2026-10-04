@@ -132,3 +132,12 @@ test('discover filters: with / without for ratings, content and genres', async (
   assert.equal(tv.certification, undefined);                         // TV can't be filtered by rating
   assert.deepEqual(tv.without_genres.split(',').map(Number).sort(), [10763, 10764, 10767]);
 });
+
+test('streaming buttons: BritBox and Crave open in Prime Video, one button per app', async () => {
+  const { launchable } = await import('../phone/js/streaming.js');
+  const names = (list) => launchable(list.map((n) => ({ provider_name: n }))).map((s) => `${s.app}:${s.label}`);
+  assert.deepEqual(names(['BritBox Amazon Channel', 'BritBox', 'PBS Masterpiece Amazon Channel']), ['prime:BritBox (Prime Video)']);
+  assert.deepEqual(names(['Crave', 'Crave Amazon Channel']), ['prime:Crave (Prime Video)']);
+  assert.deepEqual(names(['Amazon Prime Video', 'BritBox Amazon Channel', 'Netflix']), ['netflix:Netflix', 'prime:Prime Video']);
+  assert.deepEqual(names(['Disney Plus']), []);
+});
