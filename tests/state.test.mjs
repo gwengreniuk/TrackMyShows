@@ -87,3 +87,24 @@ test('movie watch list: add, watch, remove', () => {
   assert.deepEqual(S.moviesWatched(state).map((it) => it.media.title), ['Dune']);
   assert.equal(S.collectShows(state).size, 0); // movie events never create shows
 });
+
+test('discover hides followed, listed, watched and dismissed titles', () => {
+  const events = [
+    ev('follow', 'show:136315', { media: { kind: 'show', show_tmdb: 136315, show_title: 'The Bear' } }),
+    ev('watchlist', 'movie:949', { media: S.movieMedia(949, 'Heat', 1995) }),
+    ev('watched', 'movie:603', { media: S.movieMedia(603, 'The Matrix', 1999) }),
+    ev('dismiss', 'show:1399', { reason: 'seen' }),
+    ev('dismiss', 'movie:550', { reason: 'no' }),
+  ];
+  let state = S.buildState(events);
+  let shows = S.collectShows(state);
+  const known = (kind, id) => S.alreadyKnown(state, shows, kind, id);
+  assert.ok(known('tv', 136315) && known('tv', 1399));
+  assert.ok(known('movie', 949) && known('movie', 603) && known('movie', 550));
+  assert.ok(!known('tv', 1) && !known('movie', 1));
+  events.push(ev('undismiss', 'show:1399'));
+  state = S.buildState(events);
+  shows = S.collectShows(state);
+  assert.ok(!S.alreadyKnown(state, shows, 'tv', 1399));
+  assert.equal(shows.size, 1); // dismiss never creates a show
+});

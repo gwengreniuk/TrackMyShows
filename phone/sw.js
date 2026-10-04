@@ -1,8 +1,8 @@
 // App-shell cache so the app opens instantly and works offline. Bump VERSION on each release.
-const VERSION = 'tms-v4';
+const VERSION = 'tms-v6';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
-  'js/app.js', 'js/config.js', 'js/db.js', 'js/drive.js', 'js/remote.js', 'js/state.js', 'js/sync.js', 'js/tmdb.js',
+  'js/app.js', 'js/config.js', 'js/db.js', 'js/drive.js', 'js/omdb.js', 'js/remote.js', 'js/state.js', 'js/sync.js', 'js/tmdb.js',
   'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

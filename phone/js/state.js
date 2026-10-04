@@ -33,10 +33,16 @@ export function buildState(events) {
   const hidden = new Set();
   const followed = new Map();
   const watchlist = new Map(); // movie key -> {media, ts}
+  const dismissed = new Map(); // 'show:<id>' / 'movie:<id>' -> reason ('seen' | 'no'); hidden from Discover
   for (const e of evs) {
     let { type, key } = e;
     const ts = e.ts || 0;
     if (!key || type === 'resolve') continue;
+    if (type === 'dismiss' || type === 'undismiss') {
+      if (type === 'dismiss') dismissed.set(key, e.reason || 'no');
+      else dismissed.delete(key);
+      continue;
+    }
     if (key.startsWith('show:')) { // show-level events (link/unlink are Kodi-only)
       const id = parseInt(key.split(':')[1], 10);
       if (!id) continue;
@@ -74,7 +80,16 @@ export function buildState(events) {
       it.ignored = true;
     }
   }
-  return { items, hidden, followed, watchlist };
+  return { items, hidden, followed, watchlist, dismissed };
+}
+
+/** Should a TMDb result be left out of Discover (already followed, listed, watched or dismissed)? */
+export function alreadyKnown(state, shows, kind, id) {
+  if (kind === 'tv') {
+    return state.dismissed.has(showKey(id)) || !!shows.get(id)?.tracked;
+  }
+  const key = `movie:${id}`;
+  return state.dismissed.has(key) || state.watchlist.has(key) || isWatched(state, key);
 }
 
 /** Movies on the list that aren't watched yet, oldest addition first. */

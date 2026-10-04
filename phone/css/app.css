@@ -204,6 +204,23 @@ a { color: var(--accent); }
 .mrow .check { font-size: 18px; }
 .searchbar.inline { position: static; padding: 6px 0 2px; }
 
+/* ---- summaries ------------------------------------------------------- */
+.scores { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.score { font-size: 13px; font-weight: 600; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; }
+.chips { scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.overview { margin: 14px 2px 4px; line-height: 1.5; }
+.clamp4 { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.tagline { margin: 14px 2px 0; font-style: italic; color: var(--muted); }
+.movie-btns { margin: 4px 0 16px; }
+.sheet-text { margin: 0 6px 10px; font-size: 14px; line-height: 1.45; color: var(--muted); max-height: 30vh; overflow-y: auto; }
+
+/* ---- discover -------------------------------------------------------- */
+.row.disc { align-items: flex-start; }
+.row.disc .thumb { margin-top: 2px; }
+.disc-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; }
+.more { border: 0; background: transparent; color: var(--muted); font-size: 20px; width: 36px; height: 30px; cursor: pointer; }
+
 /* ---- search ---------------------------------------------------------- */
 .searchbar { position: sticky; top: calc(var(--top-h) + env(safe-area-inset-top, 0px)); padding: 10px 0; background: var(--bg); z-index: 5; }
 .searchbar input {

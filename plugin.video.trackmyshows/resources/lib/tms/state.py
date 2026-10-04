@@ -80,6 +80,8 @@ class State:
             elif type_ == 'unhide':
                 self.hidden_shows.discard(show_id)
             return
+        if type_ in ('dismiss', 'undismiss'):  # phone-only: hides a title from Discover
+            return
         if type_ in ('watchlist', 'unwatchlist'):
             if type_ == 'watchlist' and e.get('media'):
                 self.watchlist[key] = {'media': e['media'], 'ts': ts}

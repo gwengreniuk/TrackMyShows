@@ -5,6 +5,7 @@ import * as tmdb from './tmdb.js';
 import * as drive from './drive.js';
 import { sync } from './sync.js';
 import * as remote from './remote.js';
+import * as omdb from './omdb.js';
 
 const app = {
   state: null,
@@ -17,7 +18,9 @@ const app = {
   showFilter: 'active',
   search: { q: '', results: [], busy: false },
   msearch: { q: '', results: [], busy: false },
+  disc: { list: 'trending_tv', pages: {}, items: {}, busy: false, error: null },
   movieInfo: new Map(),
+  scores: new Map(), // imdb id -> OMDb ratings
   openSeasons: new Set(),
   lastRoute: '',
   eventCount: 0,
@@ -71,6 +74,7 @@ async function loadSettings() {
   const region = (navigator.language.split('-')[1] || 'US').toUpperCase();
   app.settings = {
     tmdbKey: await db.kvGet('tmdb_key', ''),
+    omdbKey: await db.kvGet('omdb_key', ''),
     region: await db.kvGet('region', region),
     deviceName: await db.kvGet('device_name', 'Phone'),
     clientId: (await db.kvGet('google_client_id', '')) || GOOGLE_CLIENT_ID,
@@ -79,6 +83,7 @@ async function loadSettings() {
     watchView: await db.kvGet('watch_view', 'cards'),
   };
   tmdb.setKey(app.settings.tmdbKey);
+  omdb.setKey(app.settings.omdbKey);
   app.seen = new Set(await db.kvGet('seen_releases', []));
   app.sync.last = await db.kvGet('last_sync');
 }
@@ -384,10 +389,11 @@ function toast(message, undo) {
   toastTimer = setTimeout(() => { el.hidden = true; }, undo ? 6000 : 3500);
 }
 
-function sheet(title, options) {
+function sheet(title, options, text = '') {
   const el = document.getElementById('sheet');
   el.innerHTML = `<div class="sheet-backdrop" data-close></div><div class="sheet-panel" role="dialog" aria-label="${esc(title)}">
     <div class="sheet-title">${esc(title)}</div>
+    ${text ? `<p class="sheet-text">${esc(text)}</p>` : ''}
     ${options.map((o, i) => `<button type="button" class="sheet-btn${o.danger ? ' danger' : ''}" data-i="${i}">${esc(o.label)}</button>`).join('')}
     <button type="button" class="sheet-btn cancel" data-close>Cancel</button></div>`;
   el.hidden = false;
@@ -430,7 +436,7 @@ function render() {
     renderMovieResults(); // don't rebuild the page while typing in the search box
   } else {
     const views = { watching: watchingView, new: newView, movies: moviesView, shows: showsView, search: searchView,
-                    show: () => showView(+r.arg), settings: settingsView };
+                    show: () => showView(+r.arg), movie: () => movieView(+r.arg), settings: settingsView };
     view.innerHTML = (views[r.name] || watchingView)();
     if (r.name === 'search') renderSearchResults();
     if (r.name === 'movies') renderMovieResults();
@@ -595,12 +601,13 @@ function movieRow(m, { watchedTs } = {}) {
   const info = app.movieInfo.get(m.tmdb);
   const done = S.isWatched(app.state, S.mediaKey(m));
   const bits = [];
-  if (m.year) bits.push(m.year);
+  if (info?.release_date && Date.parse(info.release_date) > Date.now()) bits.push(`Out ${fmtDate(info.release_date)}`);
+  else if (m.year) bits.push(m.year);
   if (info?.runtime) bits.push(`${Math.floor(info.runtime / 60)}h ${String(info.runtime % 60).padStart(2, '0')}m`);
   if (watchedTs) bits.push(`watched ${new Date(watchedTs * 1000).toLocaleDateString()}`);
   return `<article class="mrow">
     ${poster(info?.poster_path, 'thumb')}
-    <div class="row-body" data-action="movieMenu" data-m="${esc(JSON.stringify(m))}">
+    <div class="row-body" data-href="#/movie/${m.tmdb}">
       <div class="row-title">${esc(m.title)}</div>
       <div class="row-sub">${esc(bits.join(' · '))}</div>
     </div>
@@ -608,6 +615,80 @@ function movieRow(m, { watchedTs } = {}) {
     ${done ? '' : `<button type="button" class="play" data-action="playMovie" data-m="${esc(JSON.stringify(m))}" aria-label="Play ${esc(m.title)} on TV">▶</button>
     <button type="button" class="check" data-action="markMovie" data-m="${esc(JSON.stringify(m))}" aria-label="Mark ${esc(m.title)} watched">✓</button>`}
   </article>`;
+}
+
+const scoreLoads = new Set();
+function scoreBadges(imdbId) {
+  if (!imdbId || !omdb.hasKey()) return '';
+  if (!app.scores.has(imdbId) && !scoreLoads.has(imdbId)) {
+    scoreLoads.add(imdbId);
+    omdb.ratings(imdbId).then((r) => { app.scores.set(imdbId, r); renderSoon(); })
+      .catch((err) => { app.scores.set(imdbId, null); console.warn(err); });
+  }
+  const r = app.scores.get(imdbId);
+  if (!r) return '';
+  const parts = [];
+  if (r.rt) {
+    const pct = parseInt(r.rt, 10);
+    parts.push(`<span class="score" title="Rotten Tomatoes (critics)">${pct >= 60 ? '🍅' : '🤢'} ${esc(r.rt)}</span>`);
+  }
+  if (r.imdb) parts.push(`<span class="score" title="IMDb">IMDb ${esc(r.imdb)}</span>`);
+  if (r.metacritic) parts.push(`<span class="score" title="Metacritic">MC ${esc(r.metacritic)}</span>`);
+  return parts.length ? `<div class="scores">${parts.join('')}</div>` : '';
+}
+
+async function ensureMovie(id) {
+  if (app.movieInfo.has(id)) return app.movieInfo.get(id);
+  const data = await tmdb.movie(id);
+  if (data) app.movieInfo.set(id, data);
+  return data;
+}
+
+function movieView(id) {
+  const info = app.movieInfo.get(id);
+  if (!info) {
+    ensureMovie(id).then(renderSoon).catch((err) => toast(err.message));
+    return '<p class="muted pad">Loading…</p>';
+  }
+  const year = (info.release_date || '').slice(0, 4);
+  const m = S.movieMedia(id, info.title, year || undefined);
+  const key = S.mediaKey(m);
+  const watched = S.isWatched(app.state, key);
+  const listed = app.state.watchlist.has(key);
+  const unreleased = info.release_date && Date.parse(info.release_date) > Date.now();
+  const facts = [];
+  if (unreleased) facts.push(`Out ${fmtDate(info.release_date)}`);
+  else if (year) facts.push(year);
+  if (info.runtime) facts.push(`${Math.floor(info.runtime / 60)}h ${String(info.runtime % 60).padStart(2, '0')}m`);
+  if (info.vote_count > 50) facts.push(`★ ${info.vote_average.toFixed(1)}`);
+  const genres = (info.genres || []).map((g) => g.name).join(', ');
+  const provs = tmdb.providers(info, app.settings.region);
+  const item = app.state.items.get(key);
+  const pm = esc(JSON.stringify(m));
+  return `<div class="hero"${info.backdrop_path ? ` style="background-image:url('${tmdb.img(info.backdrop_path, 'w780')}')"` : ''}></div>
+    <div class="show-head">
+      ${poster(info.poster_path, 'poster big')}
+      <div>
+        <h1>${esc(info.title)}</h1>
+        <div class="muted">${esc(facts.join(' · '))}</div>
+        ${genres ? `<div class="muted small">${esc(genres)}</div>` : ''}
+        ${scoreBadges(info.imdb_id)}
+      </div>
+    </div>
+    ${info.tagline ? `<p class="tagline">${esc(info.tagline)}</p>` : ''}
+    ${info.overview ? `<p class="overview">${esc(info.overview)}</p>` : ''}
+    ${provs.length ? `<div class="where"><span class="muted">Watch on</span>${provs.map((p) => `<span class="prov-chip">${p.logo_path ? `<img src="${tmdb.img(p.logo_path, 'w92')}" alt="">` : ''}${esc(p.provider_name)}</span>`).join('')}</div>` : ''}
+    ${watched
+      ? `<p class="note">Watched${item?.watchedTs ? ` on ${new Date(item.watchedTs * 1000).toLocaleDateString()}` : ''}. <button type="button" class="link" data-action="movieUnwatch" data-m="${pm}">Mark unwatched</button></p>`
+      : `<div class="next-actions">
+          <button type="button" class="btn primary" data-action="playMovie" data-m="${pm}">▶ Play on TV</button>
+          <button type="button" class="btn" data-action="markMovie" data-m="${pm}">✓ Watched</button>
+        </div>`}
+    <div class="btns movie-btns">
+      ${listed ? `<button type="button" class="btn" data-action="movieUnlist" data-m="${pm}">Remove from list</button>`
+        : watched ? '' : `<button type="button" class="btn" data-action="addMovie" data-m="${pm}">+ Add to list</button>`}
+      ${!watched && !listed ? `<button type="button" class="btn" data-action="movieNo" data-m="${pm}">Not interested</button>` : ''}
+    </div>`;
 }
 
 function moviesView() {
@@ -635,7 +716,7 @@ function renderMovieResults() {
     const state = S.isWatched(app.state, key) ? '<span class="tag">Watched</span>'
       : app.state.watchlist.has(key) ? '<span class="tag">On your list</span>'
         : `<button type="button" class="btn small" data-action="addMovie" data-m="${esc(JSON.stringify(m))}">Add</button>`;
-    return `<article class="row">
+    return `<article class="row" data-href="#/movie/${r.id}">
       ${poster(r.poster_path, 'thumb')}
       <div class="row-body"><div class="row-title">${esc(r.title)}${m.year ? ` <span class="muted">(${m.year})</span>` : ''}</div>
       <div class="row-sub clamp">${esc(r.overview || '')}</div></div>${state}</article>`;
@@ -669,11 +750,89 @@ function searchView() {
     <div id="results"></div>`;
 }
 
+// ---------------------------------------------------------------- discover
+async function loadDiscover(list, more = false) {
+  const d = app.disc;
+  if (d.busy || !tmdb.hasKey()) return;
+  const page = more ? (d.pages[list] || 1) + 1 : 1;
+  if (!more && d.items[list]) return;
+  d.busy = true;
+  d.error = null;
+  renderSearchResults();
+  try {
+    const { results, totalPages } = await tmdb.discover(list, page, app.settings.region);
+    d.items[list] = more ? [...(d.items[list] || []), ...results] : results;
+    d.pages[list] = page;
+    d.total = { ...(d.total || {}), [list]: totalPages };
+  } catch (err) {
+    d.error = err.message;
+  }
+  d.busy = false;
+  renderSearchResults();
+}
+
+function discoverItem(r, kind) {
+  const isTv = kind === 'tv';
+  const title = isTv ? r.name : r.title;
+  const date = isTv ? r.first_air_date : r.release_date;
+  const year = (date || '').slice(0, 4);
+  const sub = [];
+  if (app.disc.list === 'upcoming_movies' && date) sub.push(`Out ${fmtDate(date)}`);
+  else if (year) sub.push(year);
+  if (r.vote_count > 50 && r.vote_average) sub.push(`★ ${r.vote_average.toFixed(1)}`);
+  const payload = esc(JSON.stringify({ kind, id: r.id, title, year }));
+  return `<article class="row disc" data-href="#/${isTv ? 'show' : 'movie'}/${r.id}">
+    ${poster(r.poster_path, 'thumb')}
+    <div class="row-body">
+      <div class="row-title">${esc(title)}</div>
+      <div class="row-sub">${esc(sub.join(' · '))}</div>
+      <div class="row-sub clamp">${esc(r.overview || '')}</div>
+    </div>
+    <div class="disc-actions">
+      <button type="button" class="btn small" data-action="discAdd" data-p="${payload}">Add</button>
+      <button type="button" class="more" data-action="discMore" data-p="${payload}" aria-label="More options for ${esc(title)}">⋯</button>
+    </div>
+  </article>`;
+}
+
+function renderDiscover(box) {
+  const d = app.disc;
+  const chips = Object.entries(tmdb.DISCOVER_LISTS).map(([key, l]) =>
+    `<button type="button" class="chip${d.list === key ? ' on' : ''}" data-action="discList" data-l="${key}">${l.label}</button>`).join('');
+  const meta = tmdb.DISCOVER_LISTS[d.list];
+  const all = d.items[d.list];
+  if (!all && !d.busy && !d.error) loadDiscover(d.list);
+  const visible = (all || []).filter((r) => !S.alreadyKnown(app.state, app.shows, meta.kind, r.id));
+  const canMore = all && (d.pages[d.list] || 1) < ((d.total || {})[d.list] || 1);
+  let body;
+  if (d.error) body = `<p class="error pad">${esc(d.error)}</p>`;
+  else if (!all) body = '<p class="muted pad">Loading…</p>';
+  else if (!visible.length) body = '<p class="muted pad">Nothing new here. Try loading more.</p>';
+  else body = visible.map((r) => discoverItem(r, meta.kind)).join('');
+  box.innerHTML = `<div class="chips">${chips}</div>${body}
+    ${canMore ? `<button type="button" class="btn wide" data-action="discMore20" ${d.busy ? 'disabled' : ''}>${d.busy ? 'Loading…' : 'Load more'}</button>` : ''}`;
+}
+
+function dismiss(p, reason) {
+  const key = p.kind === 'tv' ? S.showKey(p.id) : `movie:${p.id}`;
+  const specs = [{ type: 'dismiss', key, reason }];
+  if (reason === 'seen' && p.kind === 'movie') {
+    specs.push({ type: 'watched', key, media: S.movieMedia(p.id, p.title, p.year) });
+  }
+  const undo = [{ type: 'undismiss', key }];
+  if (reason === 'seen' && p.kind === 'movie') undo.push({ type: 'unwatched', key, media: S.movieMedia(p.id, p.title, p.year) });
+  return commit(specs, reason === 'seen' ? `${p.title}: marked as watched` : `${p.title}: won't be suggested again`, undo);
+}
+
 function renderSearchResults() {
   const box = document.getElementById('results');
   if (!box) return;
   if (!tmdb.hasKey()) {
     box.innerHTML = '<p class="muted pad">Add your TMDb key in Settings to search.</p>';
+    return;
+  }
+  if (!app.search.q.trim()) {
+    renderDiscover(box);
     return;
   }
   if (app.search.busy) {
@@ -785,10 +944,12 @@ function showView(id) {
       <div>
         <h1>${esc(tv.name)}</h1>
         <div class="muted">${esc(years)} · ${esc(tv.status || '')} · ${tv.number_of_seasons || '?'} season${tv.number_of_seasons === 1 ? '' : 's'}</div>
+        ${scoreBadges(tv.external_ids?.imdb_id)}
         <label class="toggle-row"><span>Active</span><span class="switch"><input type="checkbox" data-change="active" data-id="${id}" ${show.active ? 'checked' : ''}><span></span></span></label>
       </div>
     </div>
     ${provs.length ? `<div class="where"><span class="muted">Watch on</span>${provs.map((p) => `<span class="prov-chip">${p.logo_path ? `<img src="${tmdb.img(p.logo_path, 'w92')}" alt="">` : ''}${esc(p.provider_name)}</span>`).join('')}</div>` : ''}
+    ${tv.overview ? `<p class="overview clamp4" data-action="expand">${esc(tv.overview)}</p>` : ''}
     ${nextLine}
     ${seasons.map(seasonBlock).join('')}`;
 }
@@ -809,6 +970,7 @@ function settingsView() {
     </fieldset>
     <fieldset><legend>TMDb</legend>
       <label>API key<input name="tmdbKey" value="${esc(st.tmdbKey)}" autocomplete="off" spellcheck="false"></label>
+      <label>OMDb API key, for Rotten Tomatoes scores (free at omdbapi.com)<input name="omdbKey" value="${esc(st.omdbKey)}" autocomplete="off" spellcheck="false"></label>
       <label>Streaming region (2 letters)<input name="region" value="${esc(st.region)}" maxlength="2" autocapitalize="characters"></label>
     </fieldset>
     <fieldset><legend>This phone</legend>
@@ -825,9 +987,32 @@ const actions = {
   markNext: (d) => markEpisode(+d.id, +d.s, +d.e, true),
   playTv: (d) => playOnTv(+d.id, +d.s, +d.e),
   addMovie: (d) => addMovie(JSON.parse(d.m)),
+  discList: (d) => { app.disc.list = d.l; renderSearchResults(); },
+  discMore20: () => loadDiscover(app.disc.list, true),
+  discAdd: (d) => {
+    const p = JSON.parse(d.p);
+    if (p.kind === 'tv') return follow(p.id, p.title);
+    return addMovie(S.movieMedia(p.id, p.title, p.year));
+  },
+  discMore: (d) => {
+    const p = JSON.parse(d.p);
+    sheet(p.year ? `${p.title} (${p.year})` : p.title, [
+      { label: "I've watched it", fn: () => dismiss(p, 'seen') },
+      { label: 'Not interested', fn: () => dismiss(p, 'no') },
+      ...(p.kind === 'tv' ? [{ label: 'Open show page', fn: () => { location.hash = `#/show/${p.id}`; } }] : []),
+    ]);
+  },
+
   playMovie: (d) => playMovieOnTv(JSON.parse(d.m)),
   markMovie: (d) => markMovie(JSON.parse(d.m), true),
   movieMenu: (d) => movieSheet(JSON.parse(d.m)),
+  movieUnwatch: (d) => markMovie(JSON.parse(d.m), false),
+  movieUnlist: (d) => removeMovie(JSON.parse(d.m)),
+  movieNo: (d) => {
+    const m = JSON.parse(d.m);
+    dismiss({ kind: 'movie', id: m.tmdb, title: m.title, year: m.year }, 'no');
+  },
+  expand: (d, el) => el.classList.toggle('clamp4'),
   setView: async (d) => {
     app.settings.watchView = d.v;
     await db.kvSet('watch_view', d.v);
@@ -837,13 +1022,14 @@ const actions = {
   epMenu: (d) => {
     const id = +d.id; const s = +d.s; const e = +d.e;
     const done = S.isWatched(app.state, S.epKey(id, s, e));
-    sheet(`${showTitle(id)} ${S.se(s, e)}`, [
+    const ep = app.seasons.get(`${id}:${s}`)?.episodes?.find((x) => x.episode_number === e);
+    sheet(`${showTitle(id)} ${S.se(s, e)}${ep?.name ? ` · ${ep.name}` : ''}`, [
       { label: 'Play on TV', fn: () => playOnTv(id, s, e) },
       { label: 'Play on TV, choosing the source in Seren', fn: () => playOnTv(id, s, e, 'pick') },
       { label: done ? 'Mark unwatched' : 'Mark watched', fn: () => markEpisode(id, s, e, !done) },
       { label: `Mark watched up to ${S.se(s, e)}`, fn: () => markUpTo(id, s, e) },
       { label: `Mark all of season ${s} watched`, fn: () => markSeason(id, s) },
-    ]);
+    ], ep?.overview || '');
   },
   markSeason: (d) => markSeason(+d.id, +d.s),
   toggleSeason: (d) => {
@@ -901,11 +1087,14 @@ view.addEventListener('submit', async (ev) => {
     const next = {
       clientId: String(f.get('clientId') || '').trim(),
       tmdbKey: String(f.get('tmdbKey') || '').trim(),
+      omdbKey: String(f.get('omdbKey') || '').trim(),
       region: String(f.get('region') || 'US').trim().toUpperCase() || 'US',
       deviceName: String(f.get('deviceName') || 'Phone').trim() || 'Phone',
     };
     await db.kvSet('google_client_id', next.clientId === GOOGLE_CLIENT_ID ? '' : next.clientId);
     await db.kvSet('tmdb_key', next.tmdbKey);
+    await db.kvSet('omdb_key', next.omdbKey);
+    omdb.setKey(next.omdbKey);
     await db.kvSet('region', next.region);
     await db.kvSet('device_name', next.deviceName);
     Object.assign(app.settings, next);
