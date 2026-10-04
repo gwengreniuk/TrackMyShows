@@ -231,6 +231,9 @@ a { color: var(--accent); }
 .ep-nav { display: flex; justify-content: space-between; margin: 22px 0 8px; }
 .btn[disabled] { opacity: .5; }
 
+/* ---- open in streaming app ------------------------------------------ */
+.open-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 2px; }
+
 /* ---- people ---------------------------------------------------------- */
 .person-head { display: flex; gap: 14px; align-items: flex-end; margin-top: 12px; }
 .person-head h1 { font-size: 22px; margin: 0 0 4px; }

@@ -6,6 +6,7 @@ import * as drive from './drive.js';
 import { sync } from './sync.js';
 import * as remote from './remote.js';
 import * as omdb from './omdb.js';
+import * as streaming from './streaming.js';
 
 const app = {
   state: null,
@@ -808,6 +809,28 @@ function episodeView(arg) {
     <div class="ep-nav">${navLink(prev, '‹ Previous')}${navLink(next, 'Next ›')}</div>`;
 }
 
+function openButtons(kind, id, title, provs) {
+  const services = streaming.launchable(provs);
+  if (!services.length) return '';
+  return `<div class="open-row">${services.map((s) => `<button type="button" class="btn small" data-action="openApp"
+    data-svc="${s.key}" data-kind="${kind}" data-id="${id}" data-title="${esc(title)}">Open in ${esc(s.label)} on TV</button>`).join('')}</div>`;
+}
+
+async function openOnTv(d) {
+  const service = streaming.SERVICES.find((s) => s.key === d.svc);
+  const signing = ensureSignedIn(); // start inside the tap: may need a Google popup
+  let serviceId = '';
+  try {
+    await signing;
+    serviceId = await streaming.serviceId(service, d.kind, +d.id);
+  } catch (err) {
+    if (!drive.hasValidToken()) return toast(err.message);
+    // Wikidata unavailable: still open the app
+  }
+  if (service.prop && !serviceId) toast(`Opening ${service.label}; you'll need to search for ${d.title} there`);
+  return sendToTv(`${d.title} in ${service.label}`, { action: 'launch', app: service.key, service_id: serviceId, title: d.title, kind: d.kind });
+}
+
 async function ensureMovie(id) {
   if (app.movieInfo.has(id)) return app.movieInfo.get(id);
   const data = await tmdb.movie(id);
@@ -849,6 +872,7 @@ function movieView(id) {
     ${info.tagline ? `<p class="tagline">${esc(info.tagline)}</p>` : ''}
     ${info.overview ? `<p class="overview">${esc(info.overview)}</p>` : ''}
     ${provs.length ? `<div class="where"><span class="muted">Watch on</span>${provs.map((p) => `<span class="prov-chip">${p.logo_path ? `<img src="${tmdb.img(p.logo_path, 'w92')}" alt="">` : ''}${esc(p.provider_name)}</span>`).join('')}</div>` : ''}
+    ${openButtons('movie', id, info.title, provs)}
     ${watched
       ? `<p class="note">Watched${item?.watchedTs ? ` on ${new Date(item.watchedTs * 1000).toLocaleDateString()}` : ''}. <button type="button" class="link" data-action="movieUnwatch" data-m="${pm}">Mark unwatched</button></p>`
       : `<div class="next-actions">
@@ -1182,6 +1206,7 @@ function showView(id) {
       </div>
     </div>
     ${provs.length ? `<div class="where"><span class="muted">Watch on</span>${provs.map((p) => `<span class="prov-chip">${p.logo_path ? `<img src="${tmdb.img(p.logo_path, 'w92')}" alt="">` : ''}${esc(p.provider_name)}</span>`).join('')}</div>` : ''}
+    ${openButtons('tv', id, tv.name, provs)}
     ${tv.overview ? `<p class="overview clamp4" data-action="expand">${esc(tv.overview)}</p>` : ''}
     ${nextLine}
     ${seasons.map(seasonBlock).join('')}
@@ -1226,6 +1251,7 @@ function settingsView() {
 const actions = {
   markNext: (d) => markEpisode(+d.id, +d.s, +d.e, true),
   playTv: (d) => playOnTv(+d.id, +d.s, +d.e),
+  openApp: (d) => openOnTv(d),
   addMovie: (d) => addMovie(JSON.parse(d.m)),
   discList: (d) => { app.disc.list = d.l; renderSearchResults(); },
   fToggle: () => { app.disc.showFilters = !app.disc.showFilters; renderSearchResults(); },

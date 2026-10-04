@@ -531,3 +531,28 @@ class MovieListTests(PremiumizeTests):
         self.assertIn('action=smartmovie', url)
         self.assertIn('movie=438631', url)
         self.assertIn('year=2021', url)
+
+
+class LaunchAppTests(unittest.TestCase):
+    def test_open_streaming_app(self):
+        import json
+        from tms import remote
+        cmd = remote.parse_command(json.dumps({'id': 'l1', 'ts': 1000, 'target': 'box1', 'action': 'launch',
+                                               'app': 'netflix', 'service_id': '80057281', 'title': 'Stranger Things'}).encode())
+        self.assertTrue(remote.should_run(cmd, 'box1', [], now=1001))
+        installed = ['com.netflix.ninja', 'com.amazon.firebat', 'ca.bellmedia.cravetv']
+        self.assertEqual(remote.launch_app(cmd, installed), ('com.netflix.ninja', 'https://www.netflix.com/title/80057281'))
+        self.assertEqual(remote.android_builtin('com.netflix.ninja', 'https://www.netflix.com/title/80057281'),
+                         'StartAndroidActivity("com.netflix.ninja","android.intent.action.VIEW","","https://www.netflix.com/title/80057281")')
+        prime = dict(cmd, app='prime', service_id='B07QQQ52B3')
+        self.assertEqual(remote.launch_app(prime, installed)[1], 'https://watch.amazon.com/detail?asin=B07QQQ52B3')
+        self.assertEqual(remote.launch_app(dict(cmd, app='crave', service_id=''), installed), ('ca.bellmedia.cravetv', None))
+        self.assertEqual(remote.android_builtin('ca.bellmedia.cravetv'), 'StartAndroidActivity("ca.bellmedia.cravetv")')
+        self.assertEqual(remote.launch_app(dict(cmd, app='britbox'), installed), (None, 'BritBox is not installed on this TV'))
+        self.assertIsNone(remote.parse_command(json.dumps({'id': 'x', 'ts': 1, 'action': 'launch', 'app': 'hbo'}).encode()))
+
+    def test_installed_app_listing(self):
+        from tms import remote
+        files = [{'file': 'androidapp://sources/apps/com.netflix.ninja.png', 'label': 'Netflix'},
+                 {'file': 'androidapp://sources/apps/ca.bellmedia.cravetv/', 'label': 'Crave'}]
+        self.assertEqual(remote.packages_from_listing(files), ['com.netflix.ninja', 'ca.bellmedia.cravetv'])

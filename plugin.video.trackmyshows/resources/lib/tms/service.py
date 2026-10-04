@@ -111,6 +111,20 @@ class Remote:
         self.last_poll = 0.0
         self.last_beat = 0.0
         self.version = kodi.addon().getAddonInfo('version')
+        self.apps = self.installed_apps()
+
+    @staticmethod
+    def installed_apps():
+        """Which streaming apps this box has (Android only), so the phone can say what's available."""
+        if not xbmc.getCondVisibility('System.Platform.Android'):
+            return []
+        try:
+            listing = kodi.jsonrpc('Files.GetDirectory', {'directory': 'androidapp://sources/apps/', 'media': 'files'})
+            names = remote.packages_from_listing((listing or {}).get('files'))
+        except Exception as e:
+            kodi.debug('could not list Android apps: %s' % e)
+            return []
+        return sorted(set(names) & remote.KNOWN_PACKAGES)
 
     def tick(self, drive, now):
         if now - self.last_poll >= REMOTE_POLL_SECONDS:
@@ -132,6 +146,8 @@ class Remote:
     def run(self, drive, cmd):
         self.handled = (self.handled + [cmd['id']])[-50:]
         self.store.meta_set('remote_handled', self.handled)
+        if cmd.get('action') == 'launch':
+            return self.launch(drive, cmd)
         installed = bool(xbmc.getCondVisibility('System.HasAddon(%s)' % seren.ADDON_ID))
         if cmd['kind'] == 'movie':
             kind, target = remote.launch_target(None, cmd, installed, None)
@@ -154,10 +170,30 @@ class Remote:
         self.last_ack = {'id': cmd['id'], 'ts': time.time(), 'status': kind or 'error', 'message': message}
         self.beat(drive)
 
+    def launch(self, drive, cmd):
+        app = remote.STREAMING_APPS[cmd['app']]
+        if not self.apps:
+            self.apps = self.installed_apps()
+        package, uri = remote.launch_app(cmd, self.apps)
+        if package:
+            if xbmc.Player().isPlaying():
+                xbmc.Player().stop()
+            xbmc.executebuiltin(remote.android_builtin(package, uri))
+            what = cmd.get('title') or 'the app'
+            message = 'Opening %s in %s' % (what, app['label']) if uri else 'Opened %s - search for %s there' % (app['label'], what)
+            status = 'launched'
+            kodi.log('phone opened %s (%s)' % (app['label'], uri or 'app home'))
+        else:
+            message, status = uri, 'error'  # uri holds the reason here
+            kodi.notify(message)
+        self.last_ack = {'id': cmd['id'], 'ts': time.time(), 'status': status, 'message': message}
+        self.beat(drive)
+
     def beat(self, drive):
         self.last_beat = time.time()
         me = self.store.device_id()
-        body = json.dumps(remote.heartbeat(me, self.store.device_name, self.version, self.last_ack)).encode('utf-8')
+        body = json.dumps(remote.heartbeat(me, self.store.device_name, self.version, self.last_ack,
+                                           apps=self.apps)).encode('utf-8')
         file_id = self.store.meta_get('device_file_id')
         if file_id:
             try:
