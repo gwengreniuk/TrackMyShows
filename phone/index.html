@@ -41,7 +41,7 @@
     function tmsStartFailed(msg) {
       var v = document.getElementById('view');
       if (!v || window.tmsStarted) return;
-      v.innerHTML = '<section class="empty"><h2>The app didn't start</h2><p class="muted">' +
+      v.innerHTML = '<section class="empty"><h2>The app did not start</h2><p class="muted">' +
         String(msg).replace(/[<&]/g, '') + '</p><button class="btn primary" onclick="tmsReload()">Reload</button></section>';
     }
     function tmsReload() {
