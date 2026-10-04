@@ -790,7 +790,7 @@ function discoverItem(r, kind) {
     </div>
     <div class="disc-actions">
       <button type="button" class="btn small" data-action="discAdd" data-p="${payload}">Add</button>
-      <button type="button" class="more" data-action="discMore" data-p="${payload}" aria-label="More options for ${esc(title)}">⋯</button>
+      <button type="button" class="btn small ghost" data-action="discRemove" data-p="${payload}" aria-label="Remove ${esc(title)} from suggestions">Remove</button>
     </div>
   </article>`;
 }
@@ -821,7 +821,8 @@ function dismiss(p, reason) {
   }
   const undo = [{ type: 'undismiss', key }];
   if (reason === 'seen' && p.kind === 'movie') undo.push({ type: 'unwatched', key, media: S.movieMedia(p.id, p.title, p.year) });
-  return commit(specs, reason === 'seen' ? `${p.title}: marked as watched` : `${p.title}: won't be suggested again`, undo);
+  const msg = reason === 'seen' ? `${p.title}: marked as watched` : `${p.title} removed from suggestions`;
+  return commit(specs, msg, undo);
 }
 
 function renderSearchResults() {
@@ -994,6 +995,7 @@ const actions = {
     if (p.kind === 'tv') return follow(p.id, p.title);
     return addMovie(S.movieMedia(p.id, p.title, p.year));
   },
+  discRemove: (d) => dismiss(JSON.parse(d.p), 'removed'),
   discMore: (d) => {
     const p = JSON.parse(d.p);
     sheet(p.year ? `${p.title} (${p.year})` : p.title, [
