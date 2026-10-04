@@ -45,7 +45,9 @@ async function get(path, params = {}, ttl = 12 * HOUR, { force = false } = {}) {
 /** Show details incl. seasons, last/next episode and streaming providers. */
 export const tv = (id, opts) => get(`/tv/${id}`, { append_to_response: 'watch/providers,external_ids' }, 12 * HOUR, opts);
 export const season = (id, s) => get(`/tv/${id}/season/${s}`, {}, 12 * HOUR);
-export const movie = (id, opts) => get(`/movie/${id}`, { append_to_response: 'watch/providers' }, 7 * 24 * HOUR, opts);
+export const movie = (id, opts) => get(`/movie/${id}`, { append_to_response: 'watch/providers,credits' }, 7 * 24 * HOUR, opts);
+export const tvCredits = (id) => get(`/tv/${id}/aggregate_credits`, {}, 7 * 24 * HOUR);
+export const person = (id) => get(`/person/${id}`, { append_to_response: 'combined_credits' }, 7 * 24 * HOUR);
 export const searchMovie = async (q) => ((await get('/search/movie', { query: q, include_adult: 'false' }, 24 * HOUR)) || {}).results || [];
 export const searchTv = async (q) => ((await get('/search/tv', { query: q, include_adult: 'false' }, 24 * HOUR)) || {}).results || [];
 

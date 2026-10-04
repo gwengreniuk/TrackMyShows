@@ -21,6 +21,10 @@ const app = {
   disc: { list: 'trending_tv', pages: {}, items: {}, busy: false, error: null },
   movieInfo: new Map(),
   scores: new Map(), // imdb id -> OMDb ratings
+  credits: new Map(), // show id -> aggregate cast
+  people: new Map(), // person id -> details + combined credits
+  personFilter: 'all',
+  personAll: false,
   openSeasons: new Set(),
   lastRoute: '',
   scrollPos: {}, // route -> scroll position, so Back returns to the same spot
@@ -438,6 +442,7 @@ function render() {
   } else {
     const views = { watching: watchingView, new: newView, movies: moviesView, shows: showsView, search: searchView,
                     show: () => showView(+r.arg), movie: () => movieView(+r.arg), episode: () => episodeView(r.arg),
+                    person: () => personView(+r.arg),
                     settings: settingsView };
     view.innerHTML = (views[r.name] || watchingView)();
     if (r.name === 'search') renderSearchResults();
@@ -639,6 +644,95 @@ function scoreBadges(imdbId) {
   return parts.length ? `<div class="scores">${parts.join('')}</div>` : '';
 }
 
+const creditLoads = new Set();
+function ensureTvCredits(id) {
+  if (app.credits.has(id) || creditLoads.has(id) || !tmdb.hasKey()) return;
+  creditLoads.add(id);
+  tmdb.tvCredits(id).then((c) => { app.credits.set(id, c || {}); renderSoon(); }).catch(() => creditLoads.delete(id));
+}
+
+/** Horizontal strip of people linking to their pages. items: [{id, name, profile_path, character}] */
+function castStrip(items, title = 'Cast') {
+  if (!items || !items.length) return '';
+  return `<h2 class="section">${title}</h2>
+    <div class="guests">${items.map((p) => `<a class="guest" href="#/person/${p.id}">
+      ${p.profile_path ? `<img src="${tmdb.img(p.profile_path, 'w185')}" alt="" loading="lazy">` : '<div class="guest-ph"></div>'}
+      <div class="guest-name">${esc(p.name)}</div>${p.character ? `<div class="muted small">${esc(p.character)}</div>` : ''}</a>`).join('')}</div>`;
+}
+
+const SELF_ROLE = /^(self|himself|herself|themselves)\b/i; // talk-show style appearances, not acting roles
+
+function personView(id) {
+  const p = app.people.get(id);
+  if (!p) {
+    if (tmdb.hasKey()) tmdb.person(id).then((d) => { app.people.set(id, d || {}); renderSoon(); }).catch((err) => toast(err.message));
+    return '<p class="muted pad">Loading…</p>';
+  }
+  // Merge credits: one entry per title (a TV actor appears once per show, with all their characters)
+  const byKey = new Map();
+  for (const c of p.combined_credits?.cast || []) {
+    if (c.media_type !== 'tv' && c.media_type !== 'movie') continue;
+    if ((c.genre_ids || []).some((g) => g === 10767 || g === 10763)) continue; // talk shows / news
+    const key = `${c.media_type}:${c.id}`;
+    const prev = byKey.get(key);
+    if (prev) {
+      if (c.character && !prev.characters.includes(c.character)) prev.characters.push(c.character);
+      prev.episodes = (prev.episodes || 0) + (c.episode_count || 0);
+    } else {
+      byKey.set(key, { ...c, characters: c.character ? [c.character] : [], episodes: c.episode_count || 0 });
+    }
+  }
+  const f = app.personFilter;
+  let credits = [...byKey.values()].filter((c) => f === 'all' || c.media_type === f)
+    .filter((c) => !c.characters.length || !c.characters.every((ch) => SELF_ROLE.test(ch.trim())))
+    .sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0));
+  const total = credits.length;
+  if (!app.personAll) credits = credits.slice(0, 30);
+
+  const born = p.birthday ? new Date(p.birthday + 'T00:00:00') : null;
+  const died = p.deathday ? new Date(p.deathday + 'T00:00:00') : null;
+  const age = born ? Math.floor(((died || new Date()) - born) / (365.25 * 86400000)) : null;
+  const life = [];
+  if (born) life.push(`Born ${born.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}${!died && age ? ` (${age})` : ''}`);
+  if (died) life.push(`Died ${died.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })} (${age})`);
+  if (p.place_of_birth) life.push(p.place_of_birth);
+
+  const tag = (c) => {
+    if (c.media_type === 'tv') {
+      const s = app.shows.get(c.id);
+      return s?.tracked ? '<span class="tag">Following</span>' : '';
+    }
+    const key = `movie:${c.id}`;
+    if (S.isWatched(app.state, key)) return '<span class="tag">Watched</span>';
+    return app.state.watchlist.has(key) ? '<span class="tag">On your list</span>' : '';
+  };
+  const chip = (k, label) => `<button type="button" class="chip${f === k ? ' on' : ''}" data-action="personFilter" data-f="${k}">${label}</button>`;
+  return `<div class="person-head">
+      ${p.profile_path ? `<img class="poster big" src="${tmdb.img(p.profile_path, 'w342')}" alt="">` : '<div class="poster big ph"></div>'}
+      <div>
+        <h1>${esc(p.name || '')}</h1>
+        ${p.known_for_department ? `<div class="muted">${esc(p.known_for_department === 'Acting' ? 'Actor' : p.known_for_department)}</div>` : ''}
+        ${life.map((l) => `<div class="muted small">${esc(l)}</div>`).join('')}
+      </div>
+    </div>
+    ${p.biography ? `<p class="overview clamp4" data-action="expand">${esc(p.biography)}</p>` : ''}
+    <div class="chips">${chip('all', 'All')}${chip('tv', 'TV')}${chip('movie', 'Movies')}</div>
+    ${credits.map((c) => {
+      const isTv = c.media_type === 'tv';
+      const date = isTv ? c.first_air_date : c.release_date;
+      const bits = [(date || '').slice(0, 4) || 'TBA', isTv ? 'TV' : 'Movie'];
+      if (isTv && c.episodes) bits.push(`${c.episodes} ep${c.episodes === 1 ? '' : 's'}`);
+      return `<article class="row" data-href="#/${isTv ? 'show' : 'movie'}/${c.id}">
+        ${poster(c.poster_path, 'thumb')}
+        <div class="row-body"><div class="row-title">${esc(isTv ? c.name : c.title)}</div>
+          ${c.characters.length ? `<div class="row-sub">as ${esc(c.characters.slice(0, 3).join(', '))}</div>` : ''}
+          <div class="row-sub">${esc(bits.join(' · '))}${c.vote_count > 20 ? ` · ★ ${c.vote_average.toFixed(1)}` : ''}</div></div>
+        ${tag(c)}
+      </article>`;
+    }).join('') || '<p class="muted pad">Nothing listed.</p>'}
+    ${!app.personAll && total > 30 ? `<button type="button" class="btn wide" data-action="personAll">Show all ${total}</button>` : ''}`;
+}
+
 function episodeView(arg) {
   const [id, sn, en] = String(arg).split(':').map(Number);
   const tv = app.tv.get(id);
@@ -663,7 +757,7 @@ function episodeView(arg) {
   const crew = (job) => (ep.crew || []).filter((c) => c.job === job).map((c) => c.name);
   const directors = crew('Director');
   const writers = [...new Set([...crew('Writer'), ...crew('Teleplay'), ...crew('Story')])];
-  const guests = (ep.guest_stars || []).slice(0, 8);
+  const guests = (ep.guest_stars || []).slice(0, 12);
 
   // previous / next, crossing season boundaries
   const counts = S.seasonCounts(tv);
@@ -697,10 +791,7 @@ function episodeView(arg) {
         ${directors.length ? `<div><span class="muted">Directed by</span> ${esc(directors.join(', '))}</div>` : ''}
         ${writers.length ? `<div><span class="muted">Written by</span> ${esc(writers.join(', '))}</div>` : ''}
       </div>` : ''}
-    ${guests.length ? `<h2 class="section">Guest stars</h2>
-      <div class="guests">${guests.map((g) => `<div class="guest">
-        ${g.profile_path ? `<img src="${tmdb.img(g.profile_path, 'w185')}" alt="" loading="lazy">` : '<div class="guest-ph"></div>'}
-        <div class="guest-name">${esc(g.name)}</div>${g.character ? `<div class="muted small">${esc(g.character)}</div>` : ''}</div>`).join('')}</div>` : ''}
+    ${castStrip(guests, 'Guest stars')}
     <div class="ep-nav">${navLink(prev, '‹ Previous')}${navLink(next, 'Next ›')}</div>`;
 }
 
@@ -751,6 +842,7 @@ function movieView(id) {
           <button type="button" class="btn primary" data-action="playMovie" data-m="${pm}">▶ Play on TV</button>
           <button type="button" class="btn" data-action="markMovie" data-m="${pm}">✓ Watched</button>
         </div>`}
+    ${castStrip((info.credits?.cast || []).slice(0, 15))}
     <div class="btns movie-btns">
       ${listed ? `<button type="button" class="btn" data-action="movieUnlist" data-m="${pm}">Remove from list</button>`
         : watched ? '' : `<button type="button" class="btn" data-action="addMovie" data-m="${pm}">+ Add to list</button>`}
@@ -1019,7 +1111,14 @@ function showView(id) {
     ${provs.length ? `<div class="where"><span class="muted">Watch on</span>${provs.map((p) => `<span class="prov-chip">${p.logo_path ? `<img src="${tmdb.img(p.logo_path, 'w92')}" alt="">` : ''}${esc(p.provider_name)}</span>`).join('')}</div>` : ''}
     ${tv.overview ? `<p class="overview clamp4" data-action="expand">${esc(tv.overview)}</p>` : ''}
     ${nextLine}
-    ${seasons.map(seasonBlock).join('')}`;
+    ${seasons.map(seasonBlock).join('')}
+    ${(() => {
+      ensureTvCredits(id);
+      const cast = (app.credits.get(id)?.cast || []).slice(0, 15).map((c) => ({
+        id: c.id, name: c.name, profile_path: c.profile_path,
+        character: (c.roles || []).map((r) => r.character).filter(Boolean)[0] || '' }));
+      return castStrip(cast);
+    })()}`;
 }
 
 function settingsView() {
@@ -1082,6 +1181,8 @@ const actions = {
     dismiss({ kind: 'movie', id: m.tmdb, title: m.title, year: m.year }, 'no');
   },
   expand: (d, el) => el.classList.toggle('clamp4'),
+  personFilter: (d) => { app.personFilter = d.f; app.personAll = false; render(); },
+  personAll: () => { app.personAll = true; render(); },
   epUnwatch: (d) => markEpisode(+d.id, +d.s, +d.e, false),
   epUpTo: (d) => markUpTo(+d.id, +d.s, +d.e),
   setView: async (d) => {
@@ -1189,6 +1290,7 @@ history.scrollRestoration = 'manual'; // we restore positions ourselves
 window.addEventListener('hashchange', () => {
   if (app.lastRoute) app.scrollPos[app.lastRoute] = window.scrollY; // remember where we left this page
   if (route().name !== 'show') app.openedFor = null;
+  if (route().name === 'person' && app.lastRoute !== `person/${route().arg}`) { app.personFilter = 'all'; app.personAll = false; }
   render();
 });
 document.addEventListener('visibilitychange', () => {
