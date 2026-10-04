@@ -437,7 +437,8 @@ function render() {
     renderMovieResults(); // don't rebuild the page while typing in the search box
   } else {
     const views = { watching: watchingView, new: newView, movies: moviesView, shows: showsView, search: searchView,
-                    show: () => showView(+r.arg), movie: () => movieView(+r.arg), settings: settingsView };
+                    show: () => showView(+r.arg), movie: () => movieView(+r.arg), episode: () => episodeView(r.arg),
+                    settings: settingsView };
     view.innerHTML = (views[r.name] || watchingView)();
     if (r.name === 'search') renderSearchResults();
     if (r.name === 'movies') renderMovieResults();
@@ -636,6 +637,71 @@ function scoreBadges(imdbId) {
   if (r.imdb) parts.push(`<span class="score" title="IMDb">IMDb ${esc(r.imdb)}</span>`);
   if (r.metacritic) parts.push(`<span class="score" title="Metacritic">MC ${esc(r.metacritic)}</span>`);
   return parts.length ? `<div class="scores">${parts.join('')}</div>` : '';
+}
+
+function episodeView(arg) {
+  const [id, sn, en] = String(arg).split(':').map(Number);
+  const tv = app.tv.get(id);
+  if (!tv) {
+    ensureTv(id).then(renderSoon).catch((err) => toast(err.message));
+    return '<p class="muted pad">Loading…</p>';
+  }
+  ensureSeason(id, sn);
+  const season = app.seasons.get(`${id}:${sn}`);
+  if (!season) return '<p class="muted pad">Loading…</p>';
+  const eps = season.episodes || [];
+  const idx = eps.findIndex((x) => x.episode_number === en);
+  const ep = eps[idx];
+  if (!ep) return `<p class="muted pad">Episode not found. <a href="#/show/${id}">Back to ${esc(tv.name)}</a></p>`;
+
+  const done = S.isWatched(app.state, S.epKey(id, sn, en));
+  const aired = isAired(ep.air_date);
+  const facts = [];
+  if (ep.air_date) facts.push(aired ? new Date(ep.air_date + 'T00:00:00').toLocaleDateString() : `Airs ${fmtDate(ep.air_date)}`);
+  if (ep.runtime) facts.push(`${ep.runtime} min`);
+  if (ep.vote_count > 5 && ep.vote_average) facts.push(`★ ${ep.vote_average.toFixed(1)}`);
+  const crew = (job) => (ep.crew || []).filter((c) => c.job === job).map((c) => c.name);
+  const directors = crew('Director');
+  const writers = [...new Set([...crew('Writer'), ...crew('Teleplay'), ...crew('Story')])];
+  const guests = (ep.guest_stars || []).slice(0, 8);
+
+  // previous / next, crossing season boundaries
+  const counts = S.seasonCounts(tv);
+  let prev = idx > 0 ? [sn, eps[idx - 1].episode_number] : null;
+  let next = idx < eps.length - 1 ? [sn, eps[idx + 1].episode_number] : null;
+  if (!prev) {
+    const before = counts.filter(([s]) => s < sn).pop();
+    if (before) prev = [before[0], before[1]];
+  }
+  if (!next) {
+    const after = counts.find(([s]) => s > sn);
+    if (after) next = [after[0], 1];
+  }
+  const navLink = (p, label) => (p ? `<a class="btn" href="#/episode/${id}:${p[0]}:${p[1]}" data-replace>${label}</a>` : '<span></span>');
+
+  return `<div class="hero ep-hero"${ep.still_path ? ` style="background-image:url('${tmdb.img(ep.still_path, 'w780')}')"` : ''}></div>
+    <div class="ep-head">
+      <a class="muted small" href="#/show/${id}">‹ ${esc(tv.name)}</a>
+      <h1>${S.se(sn, en)} · ${esc(ep.name || '')}</h1>
+      <div class="muted">${esc(facts.join(' · '))}</div>
+    </div>
+    ${ep.overview ? `<p class="overview">${esc(ep.overview)}</p>` : '<p class="muted pad">No summary yet.</p>'}
+    ${done
+      ? `<p class="note">You've watched this. <button type="button" class="link" data-action="epUnwatch" data-id="${id}" data-s="${sn}" data-e="${en}">Mark unwatched</button></p>`
+      : `<div class="next-actions">
+          <button type="button" class="btn primary" data-action="playTv" data-id="${id}" data-s="${sn}" data-e="${en}" ${aired ? '' : 'disabled'}>▶ Play on TV</button>
+          <button type="button" class="btn" data-action="markNext" data-id="${id}" data-s="${sn}" data-e="${en}">✓ Watched</button>
+        </div>
+        <button type="button" class="link" data-action="epUpTo" data-id="${id}" data-s="${sn}" data-e="${en}">Mark watched up to here</button>`}
+    ${directors.length || writers.length ? `<div class="credits">
+        ${directors.length ? `<div><span class="muted">Directed by</span> ${esc(directors.join(', '))}</div>` : ''}
+        ${writers.length ? `<div><span class="muted">Written by</span> ${esc(writers.join(', '))}</div>` : ''}
+      </div>` : ''}
+    ${guests.length ? `<h2 class="section">Guest stars</h2>
+      <div class="guests">${guests.map((g) => `<div class="guest">
+        ${g.profile_path ? `<img src="${tmdb.img(g.profile_path, 'w185')}" alt="" loading="lazy">` : '<div class="guest-ph"></div>'}
+        <div class="guest-name">${esc(g.name)}</div>${g.character ? `<div class="muted small">${esc(g.character)}</div>` : ''}</div>`).join('')}</div>` : ''}
+    <div class="ep-nav">${navLink(prev, '‹ Previous')}${navLink(next, 'Next ›')}</div>`;
 }
 
 async function ensureMovie(id) {
@@ -912,7 +978,7 @@ function showView(id) {
         const future = !isAired(ep.air_date);
         return `<div class="ep${done ? ' done' : ''}${future ? ' future' : ''}">
           <button type="button" class="tick" data-action="toggleEp" data-id="${id}" data-s="${sn}" data-e="${ep.episode_number}" ${future ? 'disabled' : ''} aria-label="${done ? 'Mark unwatched' : 'Mark watched'}">${done ? '✓' : ''}</button>
-          <div class="ep-main" data-action="epMenu" data-id="${id}" data-s="${sn}" data-e="${ep.episode_number}">
+          <div class="ep-main" data-href="#/episode/${id}:${sn}:${ep.episode_number}">
             <div class="ep-title">${ep.episode_number}. ${esc(ep.name || '')}</div>
             <div class="ep-sub">${ep.air_date ? esc(fmtDate(ep.air_date)) : 'No date'}${ep.runtime ? ' · ' + ep.runtime + ' min' : ''}</div>
           </div></div>`;
@@ -933,7 +999,7 @@ function showView(id) {
     nextLine = `<div class="next-actions">
       <button type="button" class="btn primary" data-action="playTv" data-id="${id}" data-s="${nu.next[0]}" data-e="${nu.next[1]}">▶ Play ${S.se(...nu.next)} on TV</button>
       <button type="button" class="btn" data-action="markNext" data-id="${id}" data-s="${nu.next[0]}" data-e="${nu.next[1]}">✓ Watched</button>
-    </div>${t ? `<p class="muted next-title">${S.se(...nu.next)} · ${esc(t)}</p>` : ''}`;
+    </div>${t ? `<p class="muted next-title"><a href="#/episode/${id}:${nu.next[0]}:${nu.next[1]}">${S.se(...nu.next)} · ${esc(t)} ›</a></p>` : ''}`;
   } else if (nu.status === 'caught_up') {
     nextLine = `<p class="note">You're caught up.${nu.nextAirDate ? ` Next: ${S.se(...nu.next)} ${esc(fmtDate(nu.nextAirDate))}.` : ''}</p>`;
   } else if (nu.status === 'finished') {
@@ -1016,6 +1082,8 @@ const actions = {
     dismiss({ kind: 'movie', id: m.tmdb, title: m.title, year: m.year }, 'no');
   },
   expand: (d, el) => el.classList.toggle('clamp4'),
+  epUnwatch: (d) => markEpisode(+d.id, +d.s, +d.e, false),
+  epUpTo: (d) => markUpTo(+d.id, +d.s, +d.e),
   setView: async (d) => {
     app.settings.watchView = d.v;
     await db.kvSet('watch_view', d.v);
@@ -1065,7 +1133,15 @@ view.addEventListener('click', (ev) => {
     return;
   }
   const link = ev.target.closest('[data-href]');
-  if (link) location.hash = link.dataset.href;
+  if (link) {
+    location.hash = link.dataset.href;
+    return;
+  }
+  const swap = ev.target.closest('a[data-replace]');
+  if (swap) {
+    ev.preventDefault();
+    location.replace(swap.getAttribute('href'));
+  }
 });
 
 view.addEventListener('change', (ev) => {
