@@ -172,6 +172,23 @@ export async function discover(list, page = 1, region = 'US', filters = null) {
   return { results: data.results || [], totalPages: Math.min(data.total_pages || 1, 500) };
 }
 
+/** Age rating for a title: your region's if TMDb has it, else the US one ('' if none). */
+export async function ageRating(kind, id, region = 'US') {
+  if (kind === 'tv') {
+    const data = (await get(`/tv/${id}/content_ratings`, {}, 30 * 24 * HOUR)) || {};
+    const by = (c) => data.results?.find((r) => r.iso_3166_1 === c)?.rating || '';
+    return by(region) || by('US');
+  }
+  const data = (await get(`/movie/${id}/release_dates`, {}, 30 * 24 * HOUR)) || {};
+  const by = (c) => {
+    const dates = data.results?.find((r) => r.iso_3166_1 === c)?.release_dates || [];
+    // prefer the theatrical (3) / digital (4) rating, else any non-empty one
+    const pick = dates.find((d) => d.certification && (d.type === 3 || d.type === 4)) || dates.find((d) => d.certification);
+    return pick?.certification || '';
+  };
+  return by(region) || by('US');
+}
+
 /** Cached-only lookup (no network). */
 export async function tvCached(id) {
   const url = new URL(BASE + `/tv/${id}`);

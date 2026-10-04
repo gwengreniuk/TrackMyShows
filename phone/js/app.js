@@ -36,6 +36,40 @@ const view = document.getElementById('view');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const DAY = 86400000;
 
+// ---------------------------------------------------------------- age rating badges
+const certs = new Map(); // 'tv:1396' -> 'TV-MA' ('' = none)
+const certQueue = [];
+let certWorkers = 0;
+function certBadge(kind, id) {
+  if (!id || !tmdb.hasKey()) return '';
+  const key = `${kind}:${id}`;
+  if (!certs.has(key)) {
+    certs.set(key, null); // loading
+    certQueue.push([kind, id, key]);
+    pumpCerts();
+    return '';
+  }
+  const c = certs.get(key);
+  return c ? ` <span class="cert" title="Age rating">${esc(c)}</span>` : '';
+}
+function stars(vote, count) {
+  return vote && (count == null || count > 20) ? ` <span class="stars" title="TMDb rating">★ ${Number(vote).toFixed(1)}</span>` : '';
+}
+/** Star score and age rating, shown right after a title. */
+function ratingBadges(kind, id, vote, count) {
+  return stars(vote, count) + certBadge(kind, id);
+}
+function pumpCerts() {
+  while (certWorkers < 6 && certQueue.length) {
+    const [kind, id, key] = certQueue.shift();
+    certWorkers += 1;
+    tmdb.ageRating(kind, id, app.settings.region)
+      .then((c) => { certs.set(key, c || ''); renderSoon(); })
+      .catch(() => certs.set(key, ''))
+      .finally(() => { certWorkers -= 1; pumpCerts(); });
+  }
+}
+
 // ---------------------------------------------------------------- helpers
 function fmtDate(iso) {
   if (!iso) return '';
@@ -523,7 +557,7 @@ function card({ show, tv, nu }) {
   return `<article class="card" data-href="#/show/${show.id}">
     ${poster(tv?.poster_path)}
     <div class="card-body">
-      <div class="card-title">${esc(title)}</div>
+      <div class="card-title">${esc(title)}${ratingBadges('tv', show.id, tv?.vote_average, tv?.vote_count)}</div>
       <div class="card-sub">${sub}</div>
       <div class="bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
       <div class="card-meta"><span>${counts}</span><span class="provs">${providerLogos(tv, 2)}</span></div>
@@ -541,7 +575,7 @@ function compactRow({ show, tv, nu }) {
   else right = nu.last ? S.se(...nu.last) : 'New';
   const pct = nu.airedCount ? Math.round((nu.airedWatched / nu.airedCount) * 100) : 0;
   return `<a class="crow" href="#/show/${show.id}" style="--pct:${pct}%">
-    <span class="crow-title">${esc(tv?.name || show.title)}</span>
+    <span class="crow-title">${esc(tv?.name || show.title)}${ratingBadges('tv', show.id, tv?.vote_average, tv?.vote_count)}</span>
     <span class="crow-next">${right}</span>
   </a>`;
 }
@@ -611,7 +645,7 @@ function showsView() {
       const nu = S.nextUp(s, tv);
       return `<article class="row" data-href="#/show/${s.id}">
         ${poster(tv?.poster_path, 'thumb')}
-        <div class="row-body"><div class="row-title">${esc(showTitle(s.id))}</div>
+        <div class="row-body"><div class="row-title">${esc(showTitle(s.id))}${ratingBadges('tv', s.id, tv?.vote_average, tv?.vote_count)}</div>
         <div class="row-sub">${nu.last ? 'Last ' + S.se(...nu.last) : 'Not started'}${tv?.status ? ' · ' + esc(tv.status) : ''}</div></div>
         <label class="switch" data-stop><input type="checkbox" data-change="active" data-id="${s.id}" ${s.active ? 'checked' : ''} aria-label="Active"><span></span></label>
       </article>`;
@@ -629,7 +663,7 @@ function movieRow(m, { watchedTs } = {}) {
   return `<article class="mrow">
     ${poster(info?.poster_path, 'thumb')}
     <div class="row-body" data-href="#/movie/${m.tmdb}">
-      <div class="row-title">${esc(m.title)}</div>
+      <div class="row-title">${esc(m.title)}${ratingBadges('movie', m.tmdb, info?.vote_average, info?.vote_count)}</div>
       <div class="row-sub">${esc(bits.join(' · '))}</div>
     </div>
     <span class="provs">${providerLogos(info, 2)}</span>
@@ -738,9 +772,9 @@ function personView(id) {
       if (isTv && c.episodes) bits.push(`${c.episodes} ep${c.episodes === 1 ? '' : 's'}`);
       return `<article class="row" data-href="#/${isTv ? 'show' : 'movie'}/${c.id}">
         ${poster(c.poster_path, 'thumb')}
-        <div class="row-body"><div class="row-title">${esc(isTv ? c.name : c.title)}</div>
+        <div class="row-body"><div class="row-title">${esc(isTv ? c.name : c.title)}${ratingBadges(c.media_type, c.id, c.vote_average, c.vote_count)}</div>
           ${c.characters.length ? `<div class="row-sub">as ${esc(c.characters.slice(0, 3).join(', '))}</div>` : ''}
-          <div class="row-sub">${esc(bits.join(' · '))}${c.vote_count > 20 ? ` · ★ ${c.vote_average.toFixed(1)}` : ''}</div></div>
+          <div class="row-sub">${esc(bits.join(' · '))}</div></div>
         ${tag(c)}
       </article>`;
     }).join('') || '<p class="muted pad">Nothing listed.</p>'}
@@ -789,7 +823,7 @@ function episodeView(arg) {
 
   return `<div class="hero ep-hero"${ep.still_path ? ` style="background-image:url('${tmdb.img(ep.still_path, 'w780')}')"` : ''}></div>
     <div class="ep-head">
-      <a class="muted small" href="#/show/${id}">‹ ${esc(tv.name)}</a>
+      <a class="muted small" href="#/show/${id}">‹ ${esc(tv.name)}</a>${certBadge('tv', id)}
       <h1>${S.se(sn, en)} · ${esc(ep.name || '')}</h1>
       <div class="muted">${esc(facts.join(' · '))}</div>
     </div>
@@ -853,7 +887,6 @@ function movieView(id) {
   if (unreleased) facts.push(`Out ${fmtDate(info.release_date)}`);
   else if (year) facts.push(year);
   if (info.runtime) facts.push(`${Math.floor(info.runtime / 60)}h ${String(info.runtime % 60).padStart(2, '0')}m`);
-  if (info.vote_count > 50) facts.push(`★ ${info.vote_average.toFixed(1)}`);
   const genres = (info.genres || []).map((g) => g.name).join(', ');
   const provs = tmdb.providers(info, app.settings.region);
   const item = app.state.items.get(key);
@@ -862,7 +895,7 @@ function movieView(id) {
     <div class="show-head">
       ${poster(info.poster_path, 'poster big')}
       <div>
-        <h1>${esc(info.title)}</h1>
+        <h1>${esc(info.title)}${ratingBadges('movie', id, info.vote_average, info.vote_count)}</h1>
         <div class="muted">${esc(facts.join(' · '))}</div>
         ${genres ? `<div class="muted small">${esc(genres)}</div>` : ''}
         ${scoreBadges(info.imdb_id)}
@@ -913,7 +946,7 @@ function renderMovieResults() {
         : `<button type="button" class="btn small" data-action="addMovie" data-m="${esc(JSON.stringify(m))}">Add</button>`;
     return `<article class="row" data-href="#/movie/${r.id}">
       ${poster(r.poster_path, 'thumb')}
-      <div class="row-body"><div class="row-title">${esc(r.title)}${m.year ? ` <span class="muted">(${m.year})</span>` : ''}</div>
+      <div class="row-body"><div class="row-title">${esc(r.title)}${m.year ? ` <span class="muted">(${m.year})</span>` : ''}${ratingBadges('movie', r.id, r.vote_average, r.vote_count)}</div>
       <div class="row-sub clamp">${esc(r.overview || '')}</div></div>${state}</article>`;
   }).join('');
 }
@@ -980,12 +1013,11 @@ function discoverItem(r, kind) {
   const sub = [];
   if (app.disc.list === 'upcoming_movies' && date) sub.push(`Out ${fmtDate(date)}`);
   else if (year) sub.push(year);
-  if (r.vote_count > 50 && r.vote_average) sub.push(`★ ${r.vote_average.toFixed(1)}`);
   const payload = esc(JSON.stringify({ kind, id: r.id, title, year }));
   return `<article class="row disc" data-href="#/${isTv ? 'show' : 'movie'}/${r.id}">
     ${poster(r.poster_path, 'thumb')}
     <div class="row-body">
-      <div class="row-title">${esc(title)}</div>
+      <div class="row-title">${esc(title)}${ratingBadges(kind, r.id, r.vote_average, r.vote_count)}</div>
       <div class="row-sub">${esc(sub.join(' · '))}</div>
       <div class="row-sub clamp">${esc(r.overview || '')}</div>
     </div>
@@ -1132,7 +1164,7 @@ function renderSearchResults() {
       : `<button type="button" class="btn small" data-action="follow" data-id="${r.id}" data-title="${esc(r.name)}">${s?.tracked ? 'Reactivate' : 'Add'}</button>`;
     return `<article class="row" data-href="#/show/${r.id}">
       ${poster(r.poster_path, 'thumb')}
-      <div class="row-body"><div class="row-title">${esc(r.name)}${year ? ` <span class="muted">(${year})</span>` : ''}</div>
+      <div class="row-body"><div class="row-title">${esc(r.name)}${year ? ` <span class="muted">(${year})</span>` : ''}${ratingBadges('tv', r.id, r.vote_average, r.vote_count)}</div>
       <div class="row-sub clamp">${esc(r.overview || '')}</div></div>${button}</article>`;
   }).join('');
 }
@@ -1223,7 +1255,7 @@ function showView(id) {
     <div class="show-head">
       ${poster(tv.poster_path, 'poster big')}
       <div>
-        <h1>${esc(tv.name)}</h1>
+        <h1>${esc(tv.name)}${ratingBadges('tv', id, tv.vote_average, tv.vote_count)}</h1>
         <div class="muted">${esc(years)} · ${esc(tv.status || '')} · ${tv.number_of_seasons || '?'} season${tv.number_of_seasons === 1 ? '' : 's'}</div>
         ${scoreBadges(tv.external_ids?.imdb_id)}
         <label class="toggle-row"><span>Active</span><span class="switch"><input type="checkbox" data-change="active" data-id="${id}" ${show.active ? 'checked' : ''}><span></span></span></label>
