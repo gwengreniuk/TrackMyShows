@@ -1,5 +1,5 @@
 // App-shell cache so the app opens instantly and works offline. Bump VERSION on each release.
-const VERSION = 'tms-v7';
+const VERSION = 'tms-v8';
 const SHELL = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/config.js', 'js/db.js', 'js/drive.js', 'js/omdb.js', 'js/remote.js', 'js/state.js', 'js/sync.js', 'js/tmdb.js',
@@ -19,9 +19,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== location.origin) return; // APIs go straight to network
-  // Network first (so updates show up), cache as offline fallback.
+  // Network first (so updates show up), cache as offline fallback. 'no-cache' makes the browser
+  // revalidate with the server, so a fresh app.js never loads next to a stale cached module.
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(event.request, copy));

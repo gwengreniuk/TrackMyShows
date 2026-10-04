@@ -1123,6 +1123,7 @@ document.addEventListener('visibilitychange', () => {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
   await loadSettings();
   await refresh();
+  window.tmsStarted = true;
   render();
   loadTv();
   loadMovies();

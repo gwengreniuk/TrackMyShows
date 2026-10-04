@@ -36,6 +36,23 @@
   <div id="toast" class="toast" role="status" hidden></div>
   <div id="sheet" class="sheet" hidden></div>
 
+  <script>
+    // If the app fails to start (e.g. a half-updated cache), say so instead of showing a blank page.
+    function tmsStartFailed(msg) {
+      var v = document.getElementById('view');
+      if (!v || window.tmsStarted) return;
+      v.innerHTML = '<section class="empty"><h2>The app didn't start</h2><p class="muted">' +
+        String(msg).replace(/[<&]/g, '') + '</p><button class="btn primary" onclick="tmsReload()">Reload</button></section>';
+    }
+    function tmsReload() {
+      if (window.caches) caches.keys().then(function (k) { return Promise.all(k.map(function (n) { return caches.delete(n); })); })
+        .finally(function () { location.reload(); });
+      else location.reload();
+    }
+    window.addEventListener('error', function (e) { tmsStartFailed(e.message || 'Script error'); });
+    window.addEventListener('unhandledrejection', function (e) { tmsStartFailed((e.reason && e.reason.message) || e.reason); });
+    setTimeout(function () { tmsStartFailed('Still loading after 15 seconds. Check your connection.'); }, 15000);
+  </script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
