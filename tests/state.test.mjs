@@ -141,3 +141,19 @@ test('streaming buttons: BritBox and Crave open in Prime Video, one button per a
   assert.deepEqual(names(['Amazon Prime Video', 'BritBox Amazon Channel', 'Netflix']), ['netflix:Netflix', 'prime:Prime Video']);
   assert.deepEqual(names(['Disney Plus']), []);
 });
+
+test('origin filter: US/Canada/UK by default, English-language, or all', async () => {
+  const { applyFilters, originOk } = await import('../phone/js/tmdb.js');
+  const p = {}; applyFilters(p, 'tv', {});
+  assert.equal(p.with_origin_country, 'US|CA|GB');
+  const q = {}; applyFilters(q, 'movie', { origin: 'english' });
+  assert.equal(q.with_original_language, 'en');
+  const r = {}; applyFilters(r, 'tv', { origin: 'all' });
+  assert.equal(r.with_origin_country, undefined);
+  const kdrama = { origin_country: ['KR'], original_language: 'ko' };
+  const aussie = { origin_country: ['AU'], original_language: 'en' };
+  const mobland = { origin_country: ['GB', 'US'], original_language: 'en' };
+  assert.ok(!originOk(kdrama, {}) && !originOk(aussie, {}) && originOk(mobland, {}));
+  assert.ok(originOk(aussie, { origin: 'english' }) && !originOk(kdrama, { origin: 'english' }));
+  assert.ok(originOk(kdrama, { origin: 'all' }));
+});

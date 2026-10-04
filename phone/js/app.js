@@ -111,7 +111,7 @@ function renderSoon() {
 
 // ---------------------------------------------------------------- data
 function migrateFilters(f) {
-  const out = { include: [], exclude: [], minRating: 0, certs: {}, content: {}, ...(f || {}) };
+  const out = { include: [], exclude: [], minRating: 0, certs: {}, content: {}, origin: 'naUk', ...(f || {}) };
   for (const key of out.avoid || []) out.content[key] = 'without'; // older "avoid" list
   if (out.maxCert) { // older "up to" rating
     const allowed = tmdb.CERTS.slice(0, tmdb.CERTS.indexOf(out.maxCert) + 1);
@@ -1048,6 +1048,8 @@ function filterPanel() {
   return `<div class="filters">
     <div class="fhead"><b>Genres</b><span class="muted small">tap once: only these · twice: hide</span></div>
     <div class="fwrap">${tmdb.GENRES.map(genreChip).join('')}</div>
+    <div class="fhead"><b>Origin</b><span class="muted small">where it was made</span></div>
+    ${seg('fOrigin', f.origin, tmdb.ORIGINS)}
     <div class="fhead"><b>Minimum rating</b></div>
     ${seg('fRating', f.minRating, [[0, 'Any'], [6, '6+'], [7, '7+'], [8, '8+']])}
     <div class="fhead"><b>Movie age rating</b><span class="muted small">US ratings · movies only</span></div>
@@ -1105,13 +1107,13 @@ function renderDiscover(box) {
   const visible = (all || []).filter((r) => !S.alreadyKnown(app.state, app.shows, meta.kind, r.id));
   const canMore = all && (d.pages[d.list] || 1) < ((d.total || {})[d.list] || 1);
   // Everything on this page is already followed/listed/removed: fetch the next page automatically
-  if (all && all.length && !visible.length && canMore && !d.busy && (d.pages[d.list] || 1) < 10) {
+  if (all && !visible.length && canMore && !d.busy && (d.pages[d.list] || 1) < 10) {
     setTimeout(() => loadDiscover(d.list, true), 0);
   }
   let body;
   if (d.error) body = `<p class="error pad">${esc(d.error)}</p>`;
   else if (!all || (!visible.length && canMore)) body = '<p class="muted pad">Loading…</p>';
-  else if (!all.length && filterCount()) body = noMatches(meta.kind);
+  else if (!all.length && (filterCount() || app.settings.discFilters.origin !== 'all')) body = noMatches(meta.kind);
   else if (!visible.length) body = `<p class="muted pad">${all.length ? "You've already seen, added or removed everything here." : 'Nothing here right now.'}</p>`;
   else body = visible.map((r) => discoverItem(r, meta.kind)).join('');
   const n = filterCount();
@@ -1319,6 +1321,7 @@ const actions = {
     else f.include.push(g);
   }),
   fRating: (d) => setFilters((f) => { f.minRating = Number(d.v); }),
+  fOrigin: (d) => setFilters((f) => { f.origin = d.v; }),
   fCert: (d) => setFilters((f) => {
     const next = cycle(f.certs[d.v]);
     if (next) f.certs[d.v] = next; else delete f.certs[d.v];
@@ -1327,7 +1330,7 @@ const actions = {
     const next = cycle(f.content[d.v]);
     if (next) f.content[d.v] = next; else delete f.content[d.v];
   }),
-  fClear: () => setFilters((f) => Object.assign(f, { include: [], exclude: [], minRating: 0, certs: {}, content: {} })),
+  fClear: () => setFilters((f) => Object.assign(f, { include: [], exclude: [], minRating: 0, certs: {}, content: {} })), // keeps Origin
   discMore20: () => loadDiscover(app.disc.list, true),
   discAdd: (d) => {
     const p = JSON.parse(d.p);

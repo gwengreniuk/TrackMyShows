@@ -96,10 +96,30 @@ export const CONTENT_TAGS = [
 // US movie certifications; NR = not rated
 export const CERTS = ['G', 'PG', 'PG-13', 'R', 'NC-17', 'NR'];
 
+export const ORIGINS = [
+  ['naUk', 'US, Canada & UK'],
+  ['english', 'English-language'],
+  ['all', 'All countries'],
+];
+const NA_UK = ['US', 'CA', 'GB'];
+
+// Filters other than Origin (Origin alone keeps the real Trending list, filtered on the phone)
 export const filtersActive = (f) => !!f && !!((f.include || []).length || (f.exclude || []).length || f.minRating
   || Object.keys(f.certs || {}).length || Object.keys(f.content || {}).length);
 
+/** Does a result come from the chosen market? (for lists TMDb can't filter by country) */
+export function originOk(r, f) {
+  const origin = f?.origin || 'naUk';
+  if (origin === 'all') return true;
+  if (origin === 'english') return r.original_language === 'en';
+  const countries = r.origin_country || [];
+  return countries.length ? countries.some((c) => NA_UK.includes(c)) : r.original_language === 'en';
+}
+
 export function applyFilters(params, kind, f) {
+  const origin = f?.origin || 'naUk';
+  if (origin === 'naUk') params.with_origin_country = NA_UK.join('|');
+  else if (origin === 'english') params.with_original_language = 'en';
   if (!filtersActive(f)) return;
   const ids = (names) => names.flatMap((n) => GENRES.find((g) => g.name === n)?.[kind] || []);
   const inc = ids(f.include || []);
@@ -146,6 +166,7 @@ export async function discover(list, page = 1, region = 'US', filters = null) {
                               'air_date.lte': today, without_genres: '10763,10767' });
     } else {
       path = '/trending/tv/week';
+      params.page = page;
     }
   } else if (list === 'now_playing') {
     path = '/discover/movie';
@@ -167,9 +188,11 @@ export async function discover(list, page = 1, region = 'US', filters = null) {
     Object.assign(params, { sort_by: 'popularity.desc', 'vote_average.gte': 7.6, 'vote_count.gte': 1500,
                             'primary_release_date.lte': today });
   }
-  applyFilters(params, kind, filters);
+  if (!path.startsWith('/trending')) applyFilters(params, kind, filters);
   const data = (await get(path, params, 6 * HOUR)) || {};
-  return { results: data.results || [], totalPages: Math.min(data.total_pages || 1, 500) };
+  let results = data.results || [];
+  if (path.startsWith('/trending')) results = results.filter((r) => originOk(r, filters)); // trending can't be filtered by TMDb
+  return { results, totalPages: Math.min(data.total_pages || 1, 500), fetched: (data.results || []).length };
 }
 
 /** Age rating for a title: your region's if TMDb has it, else the US one ('' if none). */
