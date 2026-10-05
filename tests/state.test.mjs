@@ -157,3 +157,16 @@ test('origin filter: US/Canada/UK by default, English-language, or all', async (
   assert.ok(originOk(aussie, { origin: 'english' }) && !originOk(kdrama, { origin: 'english' }));
   assert.ok(originOk(kdrama, { origin: 'all' }));
 });
+
+test('paused shows: separate status, resume on a new watch', () => {
+  const events = [ep(1, 1), ev('pause', 'show:136315')];
+  let show = S.collectShows(S.buildState(events)).get(136315);
+  assert.equal(show.status, 'paused');
+  assert.ok(show.active && show.paused);
+  events.push(ev('resume', 'show:136315'));
+  assert.equal(S.collectShows(S.buildState(events)).get(136315).status, 'watching');
+  events.push(ev('pause', 'show:136315'), ep(1, 2));
+  assert.equal(S.collectShows(S.buildState(events)).get(136315).status, 'watching'); // auto-resumed
+  events.push(ev('hide', 'show:136315'));
+  assert.equal(S.collectShows(S.buildState(events)).get(136315).status, 'off');
+});

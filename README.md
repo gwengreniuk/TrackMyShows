@@ -86,7 +86,8 @@ The `phone/` folder is a web app you install from Chrome. It reads and writes th
 - **Ratings next to titles**: everywhere titles appear, you see the TMDb star score and the age rating, such as ★ 7.9 18A. The age rating is your region's when TMDb has one, otherwise the US rating.
 - **Cast**: show, movie and episode pages list the cast. Tap anyone to see their photo, biography and everything they've been in (All / TV / Movies). Titles you follow, have listed or have watched are marked, and tapping one opens its page.
 - **Rotten Tomatoes**: add a free OMDb key (omdbapi.com/apikey.aspx) in Settings to show 🍅 Rotten Tomatoes, IMDb and Metacritic scores on movie and show pages. TV shows often have no Rotten Tomatoes score in OMDb, so you'll see IMDb there.
-- **Shows**: switch shows on or off. Turning a show off removes it from Watching and New on the phone *and* from Where was I? in Kodi.
+- **Watching / Paused / Off**: set a show's status on its page. Paused shows (started, but not what you're watching now) move to a **Paused** section on the Watching tab with a **Resume** button, and go to the bottom of Kodi's Where was I?. Watching a new episode of a paused show resumes it automatically.
+- **Shows**: filter by Watching / Paused / Off. Turning a show off removes it from Watching and New on the phone *and* from Where was I? in Kodi.
 - **Discover** also has the show search: search for any show and add it. Use this for Netflix, Prime and so on, then tick episodes yourself. On a show's page, tap an episode for **Mark watched up to here** or **Mark all of season**.
 - The show page also says where the show streams in your region (Netflix, Prime, …).
 - **Play on TV (▶)** starts the episode on a Kodi box, on whichever TV you choose if more than one is on. The box plays it from Premiumize if the show's files are there, otherwise through Seren. It works from anywhere because it goes through your Google Drive, and takes about 5–10 seconds.

@@ -561,3 +561,18 @@ class LaunchAppTests(unittest.TestCase):
         files = [{'file': 'androidapp://sources/apps/com.netflix.ninja.png', 'label': 'Netflix'},
                  {'file': 'androidapp://sources/apps/ca.bellmedia.cravetv/', 'label': 'Crave'}]
         self.assertEqual(remote.packages_from_listing(files), ['com.netflix.ninja', 'ca.bellmedia.cravetv'])
+
+
+class PausedTests(StoreMixin, unittest.TestCase):
+    def test_paused_shows_sort_last_and_resume_on_watch(self):
+        store = self.make_store()
+        ep = lambda s, e: model.episode_media(136315, 'The Bear', s, e)
+        store.add_event('watched', 'tv:136315:1:1', media=ep(1, 1))
+        store.add_event('pause', model.show_key(136315))
+        state = State.build(store.events())
+        self.assertIn(136315, state.paused)
+        self.assertTrue(nextup.compute(state, FakeTmdb())[0]['paused'])
+        store.add_event('watched', 'tv:136315:1:2', media=ep(1, 2))  # watching again resumes it
+        state = State.build(store.events())
+        self.assertNotIn(136315, state.paused)
+        self.assertEqual(state.unidentified(), [])

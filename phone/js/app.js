@@ -312,6 +312,24 @@ function markSeason(id, sn) {
   return markMany(id, pairs, `in season ${sn}`);
 }
 
+function setStatus(id, status) {
+  const show = app.shows.get(id);
+  const title = showTitle(id);
+  const key = S.showKey(id);
+  const was = show?.status || 'off';
+  if (status === was) return;
+  const specs = [];
+  if (status === 'off') specs.push({ type: 'hide', key });
+  else {
+    if (was === 'off') specs.push(show?.tracked ? { type: 'unhide', key } : { type: 'follow', key, media: { kind: 'show', show_tmdb: id, show_title: title } });
+    specs.push({ type: status === 'paused' ? 'pause' : 'resume', key });
+  }
+  const undo = was === 'off' ? [{ type: 'hide', key }]
+    : [...(status === 'off' ? [{ type: 'unhide', key }] : []), { type: was === 'paused' ? 'pause' : 'resume', key }];
+  const msg = { watching: `Watching ${title}`, paused: `${title} paused`, off: `${title} turned off` }[status];
+  return commit(specs, msg, undo).then(() => ensureTv(id).then(renderSoon).catch(() => {}));
+}
+
 function setActive(id, on) {
   const show = app.shows.get(id);
   const title = showTitle(id);
@@ -527,7 +545,7 @@ function providerLogos(tv, max = 3) {
 const RANK = { available: 0, unknown: 1, caught_up: 2, finished: 3 };
 
 function watchingRows() {
-  return [...app.shows.values()].filter((s) => s.active).map((show) => {
+  return [...app.shows.values()].filter((s) => s.active && !s.paused).map((show) => {
     const tv = app.tv.get(show.id);
     return { show, tv, nu: S.nextUp(show, tv) };
   }).sort((a, b) => RANK[a.nu.status] - RANK[b.nu.status] || b.show.lastTs - a.show.lastTs);
@@ -580,6 +598,15 @@ function compactRow({ show, tv, nu }) {
   </a>`;
 }
 
+function pausedRow({ show, tv, nu }) {
+  const where = nu.status === 'available' ? `Next ${S.se(...nu.next)}` : nu.last ? `Last ${S.se(...nu.last)}` : 'Not started';
+  return `<div class="crow paused-row">
+    <a class="crow-title" href="#/show/${show.id}">${esc(tv?.name || show.title)}</a>
+    <span class="crow-next">${where}</span>
+    <button type="button" class="btn small" data-action="setStatus" data-id="${show.id}" data-s="watching">Resume</button>
+  </div>`;
+}
+
 function viewToggle() {
   const v = app.settings.watchView;
   return `<div class="seg" role="group" aria-label="Layout">
@@ -591,7 +618,7 @@ function viewToggle() {
 function watchingView() {
   if (!tmdb.hasKey()) return onboarding();
   const rows = watchingRows();
-  if (!rows.length) {
+  if (!rows.length && ![...app.shows.values()].some((s) => s.paused)) {
     return `<section class="empty"><h2>Nothing here yet</h2>
       <p>Shows you watch in Kodi appear automatically. For Netflix, Prime and others, search for the show and add it.</p>
       <a class="btn primary" href="#/search">Add a show</a></section>`;
@@ -602,9 +629,15 @@ function watchingView() {
   const compact = app.settings.watchView === 'compact';
   const item = compact ? compactRow : card;
   const list = (rs) => (compact ? `<div class="clist">${rs.map(item).join('')}</div>` : rs.map(item).join(''));
+  const paused = [...app.shows.values()].filter((s) => s.paused).map((show) => {
+    const tv = app.tv.get(show.id);
+    return { show, tv, nu: S.nextUp(show, tv) };
+  }).sort((a, b) => b.show.lastTs - a.show.lastTs);
   return `<div class="watch-head">${viewToggle()}</div>
     ${up.length ? `<h2 class="section">Up next</h2>${list(up)}` : ''}
+    ${!up.length && paused.length ? '<p class="muted pad">Nothing in progress. Resume a paused show below, or add one from Discover.</p>' : ''}
     ${caught.length ? `<h2 class="section">Caught up</h2>${list(caught)}` : ''}
+    ${paused.length ? `<h2 class="section">Paused (${paused.length})</h2><div class="clist">${paused.map(pausedRow).join('')}</div>` : ''}
     ${done.length ? `<details class="fold"><summary class="section">Finished (${done.length})</summary>${list(done)}</details>` : ''}`;
 }
 
@@ -637,16 +670,18 @@ function newView() {
 function showsView() {
   const all = [...app.shows.values()].filter((s) => s.tracked).sort((a, b) => showTitle(a.id).localeCompare(showTitle(b.id)));
   const f = app.showFilter;
-  const list = all.filter((s) => (f === 'all' ? true : f === 'active' ? s.active : !s.active));
+  const want = { active: 'watching', paused: 'paused', inactive: 'off' }[f];
+  const list = all.filter((s) => f === 'all' || s.status === want);
+  const count = (st) => all.filter((s) => s.status === st).length;
   const chip = (k, label) => `<button type="button" class="chip${f === k ? ' on' : ''}" data-action="filter" data-f="${k}">${label}</button>`;
-  return `<div class="chips">${chip('active', `Active (${all.filter((s) => s.active).length})`)}${chip('inactive', `Inactive (${all.filter((s) => !s.active).length})`)}${chip('all', 'All')}</div>
+  return `<div class="chips">${chip('active', `Watching (${count('watching')})`)}${chip('paused', `Paused (${count('paused')})`)}${chip('inactive', `Off (${count('off')})`)}${chip('all', 'All')}</div>
     ${list.map((s) => {
       const tv = app.tv.get(s.id);
       const nu = S.nextUp(s, tv);
       return `<article class="row" data-href="#/show/${s.id}">
         ${poster(tv?.poster_path, 'thumb')}
         <div class="row-body"><div class="row-title">${esc(showTitle(s.id))}${ratingBadges('tv', s.id, tv?.vote_average, tv?.vote_count)}</div>
-        <div class="row-sub">${nu.last ? 'Last ' + S.se(...nu.last) : 'Not started'}${tv?.status ? ' · ' + esc(tv.status) : ''}</div></div>
+        <div class="row-sub">${s.paused ? '<b class="paused-tag">Paused</b> · ' : ''}${nu.last ? 'Last ' + S.se(...nu.last) : 'Not started'}${tv?.status ? ' · ' + esc(tv.status) : ''}</div></div>
         <label class="switch" data-stop><input type="checkbox" data-change="active" data-id="${s.id}" ${s.active ? 'checked' : ''} aria-label="Active"><span></span></label>
       </article>`;
     }).join('') || '<p class="muted pad">No shows in this list.</p>'}`;
@@ -1260,7 +1295,8 @@ function showView(id) {
         <h1>${esc(tv.name)}${ratingBadges('tv', id, tv.vote_average, tv.vote_count)}</h1>
         <div class="muted">${esc(years)} · ${esc(tv.status || '')} · ${tv.number_of_seasons || '?'} season${tv.number_of_seasons === 1 ? '' : 's'}</div>
         ${scoreBadges(tv.external_ids?.imdb_id)}
-        <label class="toggle-row"><span>Active</span><span class="switch"><input type="checkbox" data-change="active" data-id="${id}" ${show.active ? 'checked' : ''}><span></span></span></label>
+        <div class="seg status-seg" role="group" aria-label="Status">${[['watching', 'Watching'], ['paused', 'Paused'], ['off', 'Off']].map(([v, l]) =>
+          `<button type="button" class="${(show.status || 'off') === v ? 'on' : ''}" data-action="setStatus" data-id="${id}" data-s="${v}">${l}</button>`).join('')}</div>
       </div>
     </div>
     ${provs.length ? `<div class="where"><span class="muted">Watch on</span>${provs.map((p) => `<span class="prov-chip">${p.logo_path ? `<img src="${tmdb.img(p.logo_path, 'w92')}" alt="">` : ''}${esc(p.provider_name)}</span>`).join('')}</div>` : ''}
@@ -1309,6 +1345,7 @@ function settingsView() {
 const actions = {
   markNext: (d) => markEpisode(+d.id, +d.s, +d.e, true),
   playTv: (d) => playOnTv(+d.id, +d.s, +d.e),
+  setStatus: (d) => setStatus(+d.id, d.s),
   openApp: (d) => openOnTv(d),
   addMovie: (d) => addMovie(JSON.parse(d.m)),
   discList: (d) => { app.disc.list = d.l; renderSearchResults(); },

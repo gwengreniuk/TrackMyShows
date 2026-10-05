@@ -34,6 +34,7 @@ export function buildState(events) {
   const followed = new Map();
   const watchlist = new Map(); // movie key -> {media, ts}
   const dismissed = new Map(); // 'show:<id>' / 'movie:<id>' -> reason ('seen' | 'no'); hidden from Discover
+  const paused = new Map(); // show id -> ts paused (started but not watching right now)
   for (const e of evs) {
     let { type, key } = e;
     const ts = e.ts || 0;
@@ -51,6 +52,8 @@ export function buildState(events) {
         hidden.delete(id);
       } else if (type === 'hide') hidden.add(id);
       else if (type === 'unhide') hidden.delete(id);
+      else if (type === 'pause') paused.set(id, ts);
+      else if (type === 'resume') paused.delete(id);
       continue;
     }
     if (type === 'watchlist' || type === 'unwatchlist') {
@@ -72,6 +75,10 @@ export function buildState(events) {
     if (type === 'watched') {
       Object.assign(it, { watched: true, watchedTs: ts, ignored: false, progress: null });
       it.plays += 1;
+      // Watching a new episode of a paused show means you're watching it again
+      if (media?.kind === 'episode' && paused.has(media.show_tmdb) && ts > paused.get(media.show_tmdb)) {
+        paused.delete(media.show_tmdb);
+      }
     } else if (type === 'unwatched') {
       Object.assign(it, { watched: false, progress: null });
     } else if (type === 'progress') {
@@ -80,7 +87,7 @@ export function buildState(events) {
       it.ignored = true;
     }
   }
-  return { items, hidden, followed, watchlist, dismissed };
+  return { items, hidden, followed, watchlist, dismissed, paused };
 }
 
 /** Should a TMDb result be left out of Discover (already followed, listed, watched or dismissed)? */
@@ -137,6 +144,8 @@ export function collectShows(state) {
     s.hidden = state.hidden.has(s.id);
     s.tracked = s.followed || [...s.episodes.values()].some((i) => i.watched || i.progress);
     s.active = s.tracked && !s.hidden;
+    s.paused = s.active && state.paused.has(s.id);
+    s.status = !s.active ? 'off' : s.paused ? 'paused' : 'watching';
   }
   return shows;
 }

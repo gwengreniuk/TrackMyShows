@@ -257,6 +257,8 @@ class Plugin:
                     tag.setSeason(nxt[0])
                     tag.setEpisode(nxt[1])
 
+            if en.get('paused'):
+                sub = 'Paused - ' + sub
             self.add('%s  %s' % (title, _grey(sub)), {}, art=_art(en['poster']), plot=plot, context=context,
                      info=info, **target)
         self.end('tvshows')

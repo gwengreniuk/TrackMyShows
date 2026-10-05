@@ -46,6 +46,7 @@ class State:
         self.followed = {}  # show_tmdb -> {'title', 'ts'}
         self.links = {}  # show_tmdb -> {'id', 'name'} or None (explicitly unlinked)
         self.watchlist = {}  # movie key -> {'media', 'ts'}
+        self.paused = {}  # show_tmdb -> ts paused (started, not watching right now)
 
     @classmethod
     def build(cls, events):
@@ -79,6 +80,10 @@ class State:
                 self.hidden_shows.add(show_id)
             elif type_ == 'unhide':
                 self.hidden_shows.discard(show_id)
+            elif type_ == 'pause':
+                self.paused[show_id] = ts
+            elif type_ == 'resume':
+                self.paused.pop(show_id, None)
             return
         if type_ in ('dismiss', 'undismiss'):  # phone-only: hides a title from Discover
             return
@@ -103,6 +108,9 @@ class State:
         item.last_device = e.get('device_name') or item.last_device
         if type_ == 'watched':
             item.watched, item.watched_ts, item.ignored = True, ts, False
+            sid = (media or {}).get('show_tmdb') if (media or {}).get('kind') == 'episode' else None
+            if sid in self.paused and ts > self.paused[sid]:
+                self.paused.pop(sid)  # watching a new episode resumes a paused show
             item.plays += 1
             item.progress = None
         elif type_ == 'unwatched':

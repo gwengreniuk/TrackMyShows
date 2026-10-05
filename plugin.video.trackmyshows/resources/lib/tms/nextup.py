@@ -2,6 +2,7 @@
 
 ENDED = ('Ended', 'Canceled', 'Cancelled')
 _RANK = {'available': 0, 'unknown': 1, 'caught_up': 2, 'finished': 3}
+PAUSED_RANK = 10  # paused shows go after everything you're currently watching
 
 
 def _pair(ep):
@@ -32,7 +33,7 @@ def compute(state, tmdb, include_hidden=False):
         entry = {'show_tmdb': show_id, 'show_title': show['title'], 'poster': None, 'last': last,
                  'last_ts': show['last_ts'], 'watched_count': len(watched), 'next': None,
                  'next_title': None, 'next_air_date': None, 'status': 'unknown',
-                 'hidden': show_id in state.hidden_shows}
+                 'hidden': show_id in state.hidden_shows, 'paused': show_id in getattr(state, 'paused', {})}
         info = None
         if tmdb and tmdb.available:
             try:
@@ -71,5 +72,5 @@ def compute(state, tmdb, include_hidden=False):
                 entry['next_air_date'] = upcoming.get('air_date')
         entries.append(entry)
 
-    entries.sort(key=lambda x: (_RANK[x['status']], -x['last_ts']))
+    entries.sort(key=lambda x: (PAUSED_RANK if x['paused'] else 0, _RANK[x['status']], -x['last_ts']))
     return entries

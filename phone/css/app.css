@@ -179,6 +179,13 @@ a { color: var(--accent); }
 .switch input:checked + span::after { transform: translateX(18px); }
 .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* ---- paused shows ---------------------------------------------------- */
+.paused-row .crow-title { color: var(--text); text-decoration: none; }
+.paused-row .btn.small { min-height: 32px; padding: 0 10px; font-size: 13px; }
+.paused-row::after { display: none; }
+.status-seg { margin-top: 10px; }
+.paused-tag { color: var(--warn); font-weight: 600; }
+
 /* ---- compact watching list ------------------------------------------ */
 .watch-head { display: flex; justify-content: flex-end; margin: 10px 0 -8px; }
 .seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; }
