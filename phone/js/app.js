@@ -7,6 +7,7 @@ import { sync } from './sync.js';
 import * as remote from './remote.js';
 import * as omdb from './omdb.js';
 import * as streaming from './streaming.js';
+import qrcode from './vendor/qrcode.mjs';
 
 const app = {
   state: null,
@@ -510,7 +511,9 @@ function render() {
   } else if (r.name === 'movies' && sameRoute && document.activeElement?.id === 'mq') {
     renderMovieResults(); // don't rebuild the page while typing in the search box
   } else {
-    const views = { watching: watchingView, new: newView, movies: moviesView, shows: showsView, search: searchView,
+    if (r.name !== 'cover') document.body.classList.remove('cover-mode');
+    const views = { watching: () => (isCover() ? coverView() : watchingView()), cover: coverView, import: () => importView(r.arg),
+                    new: newView, movies: moviesView, shows: showsView, search: searchView,
                     show: () => showView(+r.arg), movie: () => movieView(+r.arg), episode: () => episodeView(r.arg),
                     person: () => personView(+r.arg),
                     settings: settingsView };
@@ -609,6 +612,30 @@ function pausedRow({ show, tv, nu }) {
     <span class="crow-next">${where}</span>
     <button type="button" class="btn small" data-action="setStatus" data-id="${show.id}" data-s="watching">Resume</button>
   </div>`;
+}
+
+// ---- cover screen (Flip 7 outer screen, ~400x440): next episodes with big buttons
+const coverQuery = window.matchMedia('(max-width: 460px) and (max-height: 520px)');
+const isCover = () => coverQuery.matches;
+coverQuery.addEventListener?.('change', () => render());
+
+function coverView() {
+  const rows = watchingRows().filter((r) => r.nu.status === 'available');
+  document.body.classList.add('cover-mode');
+  if (!rows.length) {
+    return `<section class="cover-empty"><p>Nothing up next.</p><a class="btn small" href="#/watching" data-full>Open app</a></section>`;
+  }
+  return `<div class="cover-list">${rows.map(({ show, tv, nu }) => {
+    const t = nextTitle(show.id, nu.next);
+    return `<div class="cover-row">
+      <a class="cover-text" href="#/show/${show.id}" data-full>
+        <span class="cover-title">${esc(tv?.name || show.title)}</span>
+        <span class="cover-ep">${S.se(...nu.next)}${t ? ' · ' + esc(t) : ''}</span>
+      </a>
+      <button type="button" class="cover-btn play" data-action="playTv" data-id="${show.id}" data-s="${nu.next[0]}" data-e="${nu.next[1]}" aria-label="Play on TV">▶</button>
+      <button type="button" class="cover-btn check" data-action="markNext" data-id="${show.id}" data-s="${nu.next[0]}" data-e="${nu.next[1]}" aria-label="Mark watched">✓</button>
+    </div>`;
+  }).join('')}</div>`;
 }
 
 function viewToggle() {
@@ -1317,6 +1344,99 @@ function showView(id) {
     })()}`;
 }
 
+// ---- copy settings to a new device: QR code -> link with the settings in the #fragment
+// (browsers never send the fragment to a server, and nothing is written to the repo)
+const b64url = (s) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64url = (s) => decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
+
+function transferLink() {
+  const st = app.settings;
+  const payload = { v: 1, c: st.clientId || '', t: st.tmdbKey || '', o: st.omdbKey || '', r: st.region || '' };
+  return `${location.origin}${location.pathname}#/import/${b64url(JSON.stringify(payload))}`;
+}
+
+function showTransferQr() {
+  const q = qrcode(0, 'M');
+  q.addData(transferLink());
+  q.make();
+  const el = document.getElementById('sheet');
+  el.innerHTML = `<div class="sheet-backdrop" data-close></div><div class="sheet-panel qr-panel" role="dialog" aria-label="Settings QR code">
+    <div class="sheet-title">Scan with the new device's camera</div>
+    <div class="qr">${q.createSvgTag({ cellSize: 6, margin: 3, scalable: true })}</div>
+    <p class="sheet-text">Contains your Google client ID and API keys. Only show it to your own devices.
+      On the new phone, open the link, then tap <b>Import</b>.</p>
+    <button type="button" class="sheet-btn cancel" data-close>Done</button></div>`;
+  el.hidden = false;
+  el.onclick = (ev) => { if (ev.target.closest('[data-close]')) el.hidden = true; };
+}
+
+function importView(arg) {
+  let p = null;
+  try { p = JSON.parse(unb64url(arg || '')); } catch { p = null; }
+  if (!p || p.v !== 1) return '<section class="empty"><h2>That settings link is not valid</h2><a class="btn" href="#/settings">Settings</a></section>';
+  app.pendingImport = p;
+  const row = (label, v) => `<li>${label}: <b>${v ? 'included' : 'not included'}</b></li>`;
+  return `<section class="empty import">
+    <h2>Copy settings to this device?</h2>
+    <ul class="steps">${row('Google client ID', p.c)}${row('TMDb key', p.t)}${row('OMDb key', p.o)}<li>Region: <b>${esc(p.r || 'unchanged')}</b></li></ul>
+    <div class="btns center">
+      <button type="button" class="btn primary" data-action="doImport">Import</button>
+      <button type="button" class="btn" data-action="cancelImport">Cancel</button>
+    </div></section>`;
+}
+
+async function doImport() {
+  const p = app.pendingImport;
+  if (!p) return;
+  if (p.c) await db.kvSet('google_client_id', p.c === GOOGLE_CLIENT_ID ? '' : p.c);
+  if (p.t) await db.kvSet('tmdb_key', p.t);
+  if (p.o) await db.kvSet('omdb_key', p.o);
+  if (p.r) await db.kvSet('region', p.r);
+  app.pendingImport = null;
+  await loadSettings();
+  history.replaceState(null, '', '#/settings'); // drop the keys from the address bar / history
+  render();
+  loadTv();
+  loadMovies();
+  toast('Settings imported. Now tap Sign in with Google.');
+}
+
+// ---- in-app QR scanner (for camera apps that don't open links)
+let scanStream = null;
+async function scanQr() {
+  if (!('BarcodeDetector' in window)) return toast("This browser can't scan QR codes. Use the camera app instead.");
+  const el = document.getElementById('sheet');
+  el.innerHTML = `<div class="scanner"><video playsinline muted></video><div class="scan-frame"></div>
+    <button type="button" class="btn" data-close>Cancel</button></div>`;
+  el.hidden = false;
+  const stop = () => { scanStream?.getTracks().forEach((t) => t.stop()); scanStream = null; el.hidden = true; };
+  el.onclick = (ev) => { if (ev.target.closest('[data-close]')) stop(); };
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  } catch (err) {
+    stop();
+    return toast('Camera unavailable: ' + err.message);
+  }
+  const video = el.querySelector('video');
+  video.srcObject = scanStream;
+  await video.play();
+  const detector = new BarcodeDetector({ formats: ['qr_code'] });
+  const tick = async () => {
+    if (!scanStream) return;
+    try {
+      const codes = await detector.detect(video);
+      const hit = codes.map((c) => c.rawValue).find((v) => v.includes('#/import/'));
+      if (hit) {
+        stop();
+        location.hash = hit.slice(hit.indexOf('#'));
+        return;
+      }
+    } catch { /* keep trying */ }
+    setTimeout(tick, 250);
+  };
+  tick();
+}
+
 function settingsView() {
   const st = app.settings;
   const signedIn = drive.hasValidToken() || st.signedInBefore;
@@ -1341,6 +1461,13 @@ function settingsView() {
     </fieldset>
     <button type="submit" class="btn primary wide">Save</button>
   </form>
+  <section class="form"><fieldset><legend>Copy to another device</legend>
+    <p class="muted">Show a QR code on this device and scan it with the new one, so you don't have to type keys.</p>
+    <div class="btns">
+      <button type="button" class="btn" data-action="showQr">Show QR code</button>
+      <button type="button" class="btn" data-action="scanQr">Scan QR code</button>
+    </div>
+  </fieldset></section>
   <p class="muted pad small">Install: in Chrome, open the ⋮ menu and choose <b>Install app</b> (or <b>Add to Home screen</b>).<br>
   TrackMyShows ${VERSION} · ${app.eventCount} history entries</p>`;
 }
@@ -1398,6 +1525,10 @@ const actions = {
     dismiss({ kind: 'movie', id: m.tmdb, title: m.title, year: m.year }, 'no');
   },
   expand: (d, el) => el.classList.toggle('clamp4'),
+  showQr: () => showTransferQr(),
+  scanQr: () => scanQr(),
+  doImport: () => doImport(),
+  cancelImport: () => { app.pendingImport = null; history.replaceState(null, '', '#/settings'); render(); },
   personFilter: (d) => { app.personFilter = d.f; app.personAll = false; render(); },
   personAll: () => { app.personAll = true; render(); },
   epUnwatch: (d) => markEpisode(+d.id, +d.s, +d.e, false),
@@ -1509,6 +1640,12 @@ view.addEventListener('submit', async (ev) => {
 document.getElementById('syncBtn').addEventListener('click', () => runSync(true));
 history.scrollRestoration = 'manual'; // we restore positions ourselves
 window.addEventListener('hashchange', () => {
+  const sheetEl = document.getElementById('sheet');
+  if (!sheetEl.hidden) { // close any open sheet / QR / scanner when navigating (e.g. Back)
+    scanStream?.getTracks().forEach((t) => t.stop());
+    scanStream = null;
+    sheetEl.hidden = true;
+  }
   if (app.lastRoute) app.scrollPos[app.lastRoute] = window.scrollY; // remember where we left this page
   if (route().name !== 'show') app.openedFor = null;
   if (route().name === 'person' && app.lastRoute !== `person/${route().arg}`) { app.personFilter = 'all'; app.personAll = false; }

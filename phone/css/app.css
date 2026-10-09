@@ -252,6 +252,29 @@ h1 .stars { font-size: 15px; }
 /* ---- open in streaming app ------------------------------------------ */
 .open-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 2px; }
 
+/* ---- QR transfer ----------------------------------------------------- */
+.qr-panel .qr { width: min(78vw, 320px); margin: 4px auto 8px; background: #fff; border-radius: 12px; padding: 8px; }
+.qr-panel .qr svg { display: block; width: 100%; height: auto; }
+.import .steps li { margin: 4px 0; }
+.btns.center { justify-content: center; }
+.scanner { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+.scanner video { width: 100%; max-height: 75vh; object-fit: cover; }
+.scan-frame { position: absolute; width: 60vw; height: 60vw; max-width: 300px; max-height: 300px; border: 3px solid #5eead4; border-radius: 16px; pointer-events: none; }
+
+/* ---- cover screen ---------------------------------------------------- */
+body.cover-mode .top, body.cover-mode .nav { display: none; }
+body.cover-mode .view { padding: 8px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
+body.cover-mode .toast { bottom: 10px; left: 8px; right: 8px; font-size: 13px; padding: 8px 10px; }
+.cover-list { display: grid; gap: 8px; }
+.cover-row { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 14px; padding: 8px 8px 8px 12px; }
+.cover-text { flex: 1; min-width: 0; color: var(--text); text-decoration: none; display: flex; flex-direction: column; }
+.cover-title { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cover-ep { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cover-btn { flex: none; width: 52px; height: 52px; border-radius: 50%; font-size: 22px; font-weight: 700; cursor: pointer; }
+.cover-btn.play { border: 0; background: var(--accent); color: var(--accent-ink); }
+.cover-btn.check { border: 2px solid var(--accent); background: transparent; color: var(--accent); }
+.cover-empty { text-align: center; padding: 40px 10px; }
+
 /* ---- people ---------------------------------------------------------- */
 .person-head { display: flex; gap: 14px; align-items: flex-end; margin-top: 12px; }
 .person-head h1 { font-size: 22px; margin: 0 0 4px; }
