@@ -16,6 +16,42 @@ export function parseJsonl(text) {
   return out;
 }
 
+// API keys (TMDb, OMDb) shared between your devices through a private settings file in your Drive.
+const SETTING_KEYS = ['tmdb_key', 'omdb_key'];
+
+/** Pull keys this device lacks (or that changed elsewhere); push keys the others lack. Returns keys pulled. */
+export async function syncSettings() {
+  const files = (await drive.listFiles('settings')).sort((a, b) => (a.modifiedTime < b.modifiedTime ? 1 : -1));
+  const file = files[0];
+  let remote = {};
+  if (file) {
+    try { remote = JSON.parse(await drive.download(file.id)) || {}; } catch { remote = {}; }
+  }
+  const localTs = await db.kvGet('keys_updated', 0);
+  const remoteTs = remote.updated || 0;
+  const pulled = [];
+  for (const k of SETTING_KEYS) {
+    const lv = await db.kvGet(k, '');
+    const rv = remote[k] || '';
+    if (rv && rv !== lv && (!lv || remoteTs > localTs)) {
+      await db.kvSet(k, rv);
+      pulled.push(k);
+    }
+  }
+  if (pulled.length) await db.kvSet('keys_updated', Math.max(localTs, remoteTs));
+  const now = {};
+  for (const k of SETTING_KEYS) now[k] = await db.kvGet(k, '');
+  if (SETTING_KEYS.some((k) => now[k] && now[k] !== (remote[k] || ''))) {
+    const ts = Date.now() / 1000;
+    const payload = { ...remote, updated: ts };
+    for (const k of SETTING_KEYS) if (now[k]) payload[k] = now[k];
+    if (file) await drive.updateFile(file.id, JSON.stringify(payload));
+    else await drive.createFile('settings.json', JSON.stringify(payload), { tms: 'settings' });
+    await db.kvSet('keys_updated', ts);
+  }
+  return pulled;
+}
+
 export async function sync() {
   const me = await db.deviceId();
   const files = await drive.listEventFiles();
@@ -55,5 +91,11 @@ export async function sync() {
   }
   await db.kvSet('drive_seen', seen);
   await db.kvSet('last_sync', Date.now());
-  return { uploaded, imported, others };
+  let settingsPulled = [];
+  try {
+    settingsPulled = await syncSettings();
+  } catch (err) {
+    console.warn('settings sync failed', err);
+  }
+  return { uploaded, imported, others, settingsPulled };
 }

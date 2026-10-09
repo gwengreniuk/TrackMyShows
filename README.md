@@ -104,7 +104,7 @@ The `phone/` folder is a web app you install from Chrome. It reads and writes th
    - Free GitHub Pages needs a public repository. That's safe here: no keys are committed. The TMDb key is typed into the app, and the Google client ID isn't a secret.
    - In the repository: **Settings → Pages → Build and deployment → Source: GitHub Actions**. The included workflow publishes `phone/` on every push to `main`.
 3. **On your phone**, open `https://<your-github-username>.github.io/TrackMyShows/` in Chrome. Use **⋮ → Install app**, then open the app from your home screen.
-4. **In the app's Settings**, paste the Google client ID and your TMDb key, tap **Save**, then **Sign in with Google**. Use the same account as the Kodi boxes.
+4. **In the app's Settings**, paste the Google client ID, tap **Save**, then **Sign in with Google**, using the same account as the Kodi boxes. Your TMDb and OMDb keys sync between your devices through a private settings file in your Drive, so you only enter them on the first device.
 
 Google gives the phone a sign-in that lasts one hour. After that, the sync button changes to **Tap to sync**. One tap renews it, usually without asking you anything. Everything else, including marking episodes, works without signing in, and syncs on your next tap.
 

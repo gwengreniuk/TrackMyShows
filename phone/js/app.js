@@ -239,7 +239,11 @@ async function runSync(interactive) {
     app.sync.status = 'ok';
     app.sync.error = null;
     app.sync.last = Date.now();
-    if (result.imported) {
+    if (result.settingsPulled?.length) {
+      await loadSettings(); // keys arrived from another device
+      toast('Got your API keys from your other devices');
+    }
+    if (result.imported || result.settingsPulled?.length) {
       await refresh();
       loadTv();
       loadMovies();
@@ -1485,6 +1489,10 @@ view.addEventListener('submit', async (ev) => {
       deviceName: String(f.get('deviceName') || 'Phone').trim() || 'Phone',
     };
     await db.kvSet('google_client_id', next.clientId === GOOGLE_CLIENT_ID ? '' : next.clientId);
+    if (next.tmdbKey !== app.settings.tmdbKey || next.omdbKey !== app.settings.omdbKey) {
+      await db.kvSet('keys_updated', Date.now() / 1000); // these win when syncing keys to other devices
+      scheduleSync(500);
+    }
     await db.kvSet('tmdb_key', next.tmdbKey);
     await db.kvSet('omdb_key', next.omdbKey);
     omdb.setKey(next.omdbKey);
