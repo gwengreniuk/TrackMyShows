@@ -275,6 +275,10 @@ body.cover-mode .toast { bottom: 10px; left: 8px; right: 8px; font-size: 13px; p
 .cover-btn.check { border: 2px solid var(--accent); background: transparent; color: var(--accent); }
 .cover-empty { text-align: center; padding: 40px 10px; }
 
+/* ---- search result kind tag ----------------------------------------- */
+.kind { display: inline-block; vertical-align: middle; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 2px 5px; margin-left: 4px; }
+
 /* ---- people ---------------------------------------------------------- */
 .person-head { display: flex; gap: 14px; align-items: flex-end; margin-top: 12px; }
 .person-head h1 { font-size: 22px; margin: 0 0 4px; }

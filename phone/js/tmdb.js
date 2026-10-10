@@ -49,6 +49,27 @@ export const movie = (id, opts) => get(`/movie/${id}`, { append_to_response: 'wa
 export const tvCredits = (id) => get(`/tv/${id}/aggregate_credits`, {}, 7 * 24 * HOUR);
 export const person = (id) => get(`/person/${id}`, { append_to_response: 'combined_credits' }, 7 * 24 * HOUR);
 export const searchMovie = async (q) => ((await get('/search/movie', { query: q, include_adult: 'false' }, 24 * HOUR)) || {}).results || [];
+/**
+ * TV shows, movies (incl. documentaries) and people in one search. If a "Series: Title" style query
+ * finds nothing (e.g. "Frontline: The Tank Man"), try each side of the colon.
+ */
+export async function searchAll(q) {
+  const run = async (query) => ((await get('/search/multi', { query, include_adult: 'false' }, 24 * HOUR)) || {}).results || [];
+  const keep = (r) => r.media_type === 'tv' || r.media_type === 'movie' || r.media_type === 'person';
+  let results = (await run(q)).filter(keep);
+  if (!results.length && /[:\-–—]/.test(q)) {
+    const parts = q.split(/\s*[:\-–—]\s*/).filter((p) => p.length > 1);
+    const seen = new Set();
+    for (const part of [...parts].reverse()) { // the part after the colon is usually the title
+      for (const r of (await run(part)).filter(keep)) {
+        const k = `${r.media_type}:${r.id}`;
+        if (!seen.has(k)) { seen.add(k); results.push(r); }
+      }
+    }
+  }
+  return results;
+}
+
 export const searchTv = async (q) => ((await get('/search/tv', { query: q, include_adult: 'false' }, 24 * HOUR)) || {}).results || [];
 
 export const DISCOVER_LISTS = {

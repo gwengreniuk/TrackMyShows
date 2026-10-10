@@ -1040,7 +1040,7 @@ function onMovieSearchInput(q) {
 }
 
 function searchView() {
-  return `<form class="searchbar" data-form="search"><input id="q" type="search" placeholder="Search TV shows" value="${esc(app.search.q)}" autocomplete="off" enterkeyhint="search"></form>
+  return `<form class="searchbar" data-form="search"><input id="q" type="search" placeholder="Search shows, movies, documentaries, people" value="${esc(app.search.q)}" autocomplete="off" enterkeyhint="search"></form>
     <div id="results"></div>`;
 }
 
@@ -1221,20 +1221,41 @@ function renderSearchResults() {
     return;
   }
   if (app.search.q && !app.search.results.length) {
-    box.innerHTML = '<p class="muted pad">No shows found.</p>';
+    box.innerHTML = '<p class="muted pad">Nothing found. Try fewer words, or just the title.</p>';
     return;
   }
-  box.innerHTML = app.search.results.map((r) => {
+  box.innerHTML = app.search.results.map(searchResultRow).join('');
+}
+
+function searchResultRow(r) {
+  if (r.media_type === 'person') {
+    const known = (r.known_for || []).map((k) => k.title || k.name).filter(Boolean).slice(0, 3).join(', ');
+    return `<article class="row" data-href="#/person/${r.id}">
+      ${poster(r.profile_path, 'thumb')}
+      <div class="row-body"><div class="row-title">${esc(r.name)} <span class="kind">Person</span></div>
+      <div class="row-sub clamp">${esc(known ? `Known for ${known}` : r.known_for_department || '')}</div></div></article>`;
+  }
+  const isTv = r.media_type === 'tv';
+  const title = isTv ? r.name : r.title;
+  const year = ((isTv ? r.first_air_date : r.release_date) || '').slice(0, 4);
+  const doc = (r.genre_ids || []).includes(99);
+  const kind = doc ? 'Documentary' : isTv ? 'TV' : 'Movie';
+  let button;
+  if (isTv) {
     const s = app.shows.get(r.id);
-    const year = (r.first_air_date || '').slice(0, 4);
-    const button = s?.active
-      ? '<span class="tag">Following</span>'
-      : `<button type="button" class="btn small" data-action="follow" data-id="${r.id}" data-title="${esc(r.name)}">${s?.tracked ? 'Reactivate' : 'Add'}</button>`;
-    return `<article class="row" data-href="#/show/${r.id}">
-      ${poster(r.poster_path, 'thumb')}
-      <div class="row-body"><div class="row-title">${esc(r.name)}${year ? ` <span class="muted">(${year})</span>` : ''}${ratingBadges('tv', r.id, r.vote_average, r.vote_count)}</div>
-      <div class="row-sub clamp">${esc(r.overview || '')}</div></div>${button}</article>`;
-  }).join('');
+    button = s?.active ? '<span class="tag">Following</span>'
+      : `<button type="button" class="btn small" data-action="follow" data-id="${r.id}" data-title="${esc(title)}">${s?.tracked ? 'Reactivate' : 'Add'}</button>`;
+  } else {
+    const m = S.movieMedia(r.id, title, year || undefined);
+    const key = S.mediaKey(m);
+    button = S.isWatched(app.state, key) ? '<span class="tag">Watched</span>'
+      : app.state.watchlist.has(key) ? '<span class="tag">On your list</span>'
+        : `<button type="button" class="btn small" data-action="addMovie" data-m="${esc(JSON.stringify(m))}">Add</button>`;
+  }
+  return `<article class="row" data-href="#/${isTv ? 'show' : 'movie'}/${r.id}">
+    ${poster(r.poster_path, 'thumb')}
+    <div class="row-body"><div class="row-title">${esc(title)}${year ? ` <span class="muted">(${year})</span>` : ''} <span class="kind">${kind}</span>${ratingBadges(isTv ? 'tv' : 'movie', r.id, r.vote_average, r.vote_count)}</div>
+    <div class="row-sub clamp">${esc(r.overview || '')}</div></div>${button}</article>`;
 }
 
 let searchTimer = null;
@@ -1250,7 +1271,7 @@ function onSearchInput(q) {
     app.search.busy = true;
     renderSearchResults();
     try {
-      app.search.results = (await tmdb.searchTv(q.trim())).slice(0, 20);
+      app.search.results = (await tmdb.searchAll(q.trim())).slice(0, 25);
     } catch (err) {
       toast(err.message);
     }
