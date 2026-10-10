@@ -1659,6 +1659,29 @@ view.addEventListener('submit', async (ev) => {
 });
 
 document.getElementById('syncBtn').addEventListener('click', () => runSync(true));
+document.getElementById('kbdBtn').addEventListener('click', () => keyboardSheet());
+
+// ---- type into Kodi's on-screen keyboard from the phone
+function keyboardSheet() {
+  const el = document.getElementById('sheet');
+  el.innerHTML = `<div class="sheet-backdrop" data-close></div><form class="sheet-panel kbd-panel" data-form="kbd">
+    <div class="sheet-title">Type on TV: open a search box in Kodi first</div>
+    <input id="kbdText" type="text" autocomplete="off" enterkeyhint="send" placeholder="e.g. the tank man" maxlength="500">
+    <label class="kbd-opt"><input type="checkbox" id="kbdDone" checked> Press Done (search) after typing</label>
+    <div class="btns center"><button type="submit" class="btn primary">Send to TV</button>
+    <button type="button" class="btn" data-close>Close</button></div></form>`;
+  el.hidden = false;
+  const input = el.querySelector('#kbdText');
+  setTimeout(() => input.focus(), 50);
+  el.onclick = (ev) => { if (ev.target.closest('[data-close]')) el.hidden = true; };
+  el.querySelector('form').onsubmit = (ev) => {
+    ev.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    el.hidden = true;
+    sendToTv(`"${text}"`, { action: 'text', text, done: el.querySelector('#kbdDone').checked });
+  };
+}
 history.scrollRestoration = 'manual'; // we restore positions ourselves
 window.addEventListener('hashchange', () => {
   const sheetEl = document.getElementById('sheet');

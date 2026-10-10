@@ -148,6 +148,8 @@ class Remote:
         self.store.meta_set('remote_handled', self.handled)
         if cmd.get('action') == 'launch':
             return self.launch(drive, cmd)
+        if cmd.get('action') == 'text':
+            return self.type_text(drive, cmd)
         installed = bool(xbmc.getCondVisibility('System.HasAddon(%s)' % seren.ADDON_ID))
         if cmd['kind'] == 'movie':
             kind, target = remote.launch_target(None, cmd, installed, None)
@@ -168,6 +170,18 @@ class Remote:
             message = target
             kodi.notify(message)
         self.last_ack = {'id': cmd['id'], 'ts': time.time(), 'status': kind or 'error', 'message': message}
+        self.beat(drive)
+
+    def type_text(self, drive, cmd):
+        # Kodi's on-screen keyboard is window 10103 ("virtualkeyboard")
+        if xbmc.getCondVisibility('Window.IsActive(virtualkeyboard)'):
+            kodi.jsonrpc('Input.SendText', {'text': cmd['text'], 'done': cmd['done']})
+            status, message = 'typed', 'Typed "%s"' % cmd['text'][:40]
+        else:
+            status, message = 'error', 'No keyboard is open on the TV. Open a search box in Kodi, then send again.'
+            kodi.notify(message)
+        kodi.log('phone keyboard: %s' % status)
+        self.last_ack = {'id': cmd['id'], 'ts': time.time(), 'status': status, 'message': message}
         self.beat(drive)
 
     def launch(self, drive, cmd):

@@ -576,3 +576,15 @@ class PausedTests(StoreMixin, unittest.TestCase):
         state = State.build(store.events())
         self.assertNotIn(136315, state.paused)
         self.assertEqual(state.unidentified(), [])
+
+
+class KeyboardTests(unittest.TestCase):
+    def test_text_command(self):
+        import json
+        from tms import remote
+        cmd = remote.parse_command(json.dumps({'id': 't1', 'ts': 1000, 'target': 'box1', 'action': 'text', 'text': 'the tank man'}).encode())
+        self.assertEqual((cmd['text'], cmd['done']), ('the tank man', True))
+        self.assertTrue(remote.should_run(cmd, 'box1', [], now=1002))
+        self.assertFalse(remote.parse_command(json.dumps({'id': 't2', 'ts': 1, 'action': 'text', 'text': 'x', 'done': False}).encode())['done'])
+        self.assertIsNone(remote.parse_command(json.dumps({'id': 't3', 'ts': 1, 'action': 'text', 'text': '   '}).encode()))
+        self.assertIsNone(remote.parse_command(json.dumps({'id': 't4', 'ts': 1, 'action': 'text', 'text': 'x' * 501}).encode()))

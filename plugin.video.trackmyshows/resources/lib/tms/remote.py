@@ -37,6 +37,16 @@ def parse_command(data):
         return None
     if not isinstance(cmd, dict) or not cmd.get('id'):
         return None
+    if cmd.get('action') == 'text':  # type into an open Kodi keyboard from the phone
+        text = cmd.get('text')
+        if not isinstance(text, str) or not text.strip() or len(text) > 500:
+            return None
+        try:
+            cmd['ts'] = float(cmd['ts'])
+        except (KeyError, TypeError, ValueError):
+            return None
+        cmd['done'] = cmd.get('done', True) is not False
+        return cmd
     if cmd.get('action') == 'launch':
         if cmd.get('app') not in STREAMING_APPS:
             return None
