@@ -1758,7 +1758,7 @@ function remoteView() {
     status = `<div class="note">
       <b>Connect to ${esc(r.tv.name || 'the TV')}</b> (first time on this phone, or away from home Wi-Fi):<br>
       1. Tap <b>Allow connection</b>. A page opens; if Chrome warns that it's not private, tap <b>Advanced → Proceed</b>.<br>
-      2. Come back and tap <b>Retry</b>.
+      2. Come back and tap <b>Retry</b>. If Chrome asks to let this site <b>access devices on your local network</b>, tap <b>Allow</b>.
       <div class="btns"><a class="btn small primary" href="${lan.certUrl(r.tv)}" target="_blank" rel="noopener">Allow connection</a>
       <button type="button" class="btn small" data-action="remoteRetry">Retry</button></div>
       <p class="muted small">${esc(r.error)}</p></div>`;
