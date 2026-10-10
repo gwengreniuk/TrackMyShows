@@ -512,7 +512,9 @@ function render() {
   } else if (r.name === 'movies' && sameRoute && document.activeElement?.id === 'mq') {
     renderMovieResults(); // don't rebuild the page while typing in the search box
   } else {
-    if (r.name !== 'cover') document.body.classList.remove('cover-mode');
+    if (!(isCover() && ['cover', 'watching', 'remote'].includes(r.name)) && r.name !== 'cover') {
+      document.body.classList.remove('cover-mode');
+    }
     const views = { watching: () => (isCover() ? coverView() : watchingView()), cover: coverView, import: () => importView(r.arg),
                     remote: remoteView,
                     new: newView, movies: moviesView, shows: showsView, search: searchView,
@@ -621,13 +623,20 @@ const coverQuery = window.matchMedia('(max-width: 460px) and (max-height: 520px)
 const isCover = () => coverQuery.matches;
 coverQuery.addEventListener?.('change', () => render());
 
+function coverTabs(active) {
+  return `<div class="cover-tabs">
+    <a href="#/cover" class="${active === 'next' ? 'on' : ''}">Up next</a>
+    <a href="#/remote" class="${active === 'remote' ? 'on' : ''}">Remote</a>
+  </div>`;
+}
+
 function coverView() {
   const rows = watchingRows().filter((r) => r.nu.status === 'available');
   document.body.classList.add('cover-mode');
   if (!rows.length) {
-    return `<section class="cover-empty"><p>Nothing up next.</p><a class="btn small" href="#/watching" data-full>Open app</a></section>`;
+    return `${coverTabs('next')}<section class="cover-empty"><p>Nothing up next.</p></section>`;
   }
-  return `<div class="cover-list">${rows.map(({ show, tv, nu }) => {
+  return `${coverTabs('next')}<div class="cover-list">${rows.map(({ show, tv, nu }) => {
     const t = nextTitle(show.id, nu.next);
     return `<div class="cover-row">
       <a class="cover-text" href="#/show/${show.id}" data-full>
@@ -1716,9 +1725,30 @@ async function remotePing() {
   renderSoon();
 }
 
+function coverRemoteView() {
+  const r = app.remote;
+  document.body.classList.add('cover-mode');
+  const btn = (a, label, cls = '', aria = '') => `<button type="button" class="rk ${cls}" data-action="rk" data-a="${a}" aria-label="${aria || a}">${label}</button>`;
+  const live = r.status === 'ok';
+  let note = '';
+  if (r.status === 'none') note = '<p class="cover-note">No TV remote yet. Set it up on the main screen.</p>';
+  else if (r.status === 'cert') note = `<p class="cover-note">Not connected. Open the app on the main screen to allow the connection. <button type="button" class="link" data-action="remoteRetry">Retry</button></p>`;
+  else if (r.status === 'loading') note = '<p class="cover-note">Connecting…</p>';
+  return `${coverTabs('remote')}${note}
+    <div class="cover-remote${live ? '' : ' offline'}">
+      <div class="dpad cover-dpad">
+        <span></span>${btn('up', '▲', '', 'Up')}<span></span>
+        ${btn('left', '◀', '', 'Left')}${btn('select', 'OK', 'ok', 'OK')}${btn('right', '▶', '', 'Right')}
+        <span></span>${btn('down', '▼', '', 'Down')}<span></span>
+      </div>
+      <div class="cover-rrow">${btn('back', '↩', '', 'Back')}${btn('home', '⌂', '', 'Home')}${btn('playpause', '⏯', '', 'Play/pause')}${btn('volumedown', '−', '', 'Volume down')}${btn('volumeup', '+', '', 'Volume up')}</div>
+    </div>`;
+}
+
 function remoteView() {
   const r = app.remote;
   if (r.status === 'loading') remoteInit();
+  if (isCover()) return coverRemoteView();
   const btn = (a, label, cls = '', aria = '') => `<button type="button" class="rk ${cls}" data-action="rk" data-a="${a}" aria-label="${aria || a}">${label}</button>`;
   let status = '';
   if (r.status === 'none') {

@@ -274,6 +274,16 @@ body.cover-mode .toast { bottom: 10px; left: 8px; right: 8px; font-size: 13px; p
 .cover-btn.play { border: 0; background: var(--accent); color: var(--accent-ink); }
 .cover-btn.check { border: 2px solid var(--accent); background: transparent; color: var(--accent); }
 .cover-empty { text-align: center; padding: 40px 10px; }
+.cover-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 3px; margin-bottom: 8px; }
+.cover-tabs a { text-align: center; padding: 7px 0; border-radius: 9px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; }
+.cover-tabs a.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+.cover-note { font-size: 12px; color: var(--muted); margin: 0 2px 6px; text-align: center; }
+.cover-remote { display: grid; gap: 8px; }
+.cover-remote.offline { opacity: .45; }
+.cover-dpad { max-width: 270px; gap: 6px; }
+.cover-dpad .rk { min-height: 62px; font-size: 22px; }
+.cover-rrow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.cover-rrow .rk { min-height: 50px; font-size: 20px; }
 
 /* ---- search result kind tag ----------------------------------------- */
 .kind { display: inline-block; vertical-align: middle; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;

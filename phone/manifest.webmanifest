@@ -9,6 +9,7 @@
   "theme_color": "#0f172a",
   "shortcuts": [
     { "name": "Up next (cover)", "short_name": "Up next", "url": "./#/cover", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "TV remote", "short_name": "Remote", "url": "./#/remote", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Discover", "url": "./#/search", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Movies", "url": "./#/movies", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ],
