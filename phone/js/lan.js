@@ -1,7 +1,7 @@
 // Direct remote control of a Kodi box on the home network, through the TrackMyShows add-on's
 // HTTPS bridge (tms/bridge.py). The box's address and secret token come from its Drive heartbeat.
 
-export const hasLan = (tv) => !!(tv && tv.lan && tv.lan.ip && tv.lan.port && tv.lan.token);
+export const hasLan = (tv) => !!(tv && tv.lan && /^\d{1,3}(\.\d{1,3}){3}$/.test(tv.lan.ip || '') && tv.lan.port && tv.lan.token);
 export const certUrl = (tv) => `https://${tv.lan.ip}:${tv.lan.port}/`;
 
 export async function rpc(tv, method, params, timeoutMs = 4000) {

@@ -213,7 +213,8 @@ class Remote:
     def beat(self, drive):
         self.last_beat = time.time()
         me = self.store.device_id()
-        lan = dict(self.lan, ip=xbmc.getInfoLabel('Network.IPAddress')) if self.lan else None
+        ip = lan_ip() if self.lan else None
+        lan = dict(self.lan, ip=ip) if ip else None
         body = json.dumps(remote.heartbeat(me, self.store.device_name, self.version, self.last_ack,
                                            apps=self.apps, lan=lan)).encode('utf-8')
         file_id = self.store.meta_get('device_file_id')
@@ -226,6 +227,25 @@ class Remote:
                     raise
         created = drive.create_file('device-%s.json' % me, body, {'tms': 'device', 'device': me})
         self.store.meta_set('device_file_id', created['id'])
+
+
+def lan_ip():
+    """This box's address on the home network (Kodi's info label can say "Busy" while starting up)."""
+    import re
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 1))  # no packets sent; just picks the outgoing interface
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        if ip and not ip.startswith('127.'):
+            return ip
+    except OSError:
+        pass
+    ip = xbmc.getInfoLabel('Network.IPAddress') or ''
+    return ip if re.match(r'^\d{1,3}(\.\d{1,3}){3}$', ip) and not ip.startswith('127.') else None
 
 
 def start_bridge(store):
