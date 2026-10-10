@@ -1,5 +1,6 @@
 """Background service: watches playback, records history, syncs with Google Drive."""
 import collections
+import os
 import time
 
 import json
@@ -7,7 +8,7 @@ import json
 import xbmc
 import xbmcgui
 
-from . import kodi, premiumize, remote, seren
+from . import bridge, kodi, premiumize, remote, seren
 from .gdrive import AuthError
 from .net import HttpError
 from .recorder import Recorder
@@ -111,6 +112,7 @@ class Remote:
         self.last_poll = 0.0
         self.last_beat = 0.0
         self.version = kodi.addon().getAddonInfo('version')
+        self.lan = None  # set when the remote-control bridge is running
         self.apps = self.installed_apps()
 
     @staticmethod
@@ -211,8 +213,9 @@ class Remote:
     def beat(self, drive):
         self.last_beat = time.time()
         me = self.store.device_id()
+        lan = dict(self.lan, ip=xbmc.getInfoLabel('Network.IPAddress')) if self.lan else None
         body = json.dumps(remote.heartbeat(me, self.store.device_name, self.version, self.last_ack,
-                                           apps=self.apps)).encode('utf-8')
+                                           apps=self.apps, lan=lan)).encode('utf-8')
         file_id = self.store.meta_get('device_file_id')
         if file_id:
             try:
@@ -225,6 +228,27 @@ class Remote:
         self.store.meta_set('device_file_id', created['id'])
 
 
+def start_bridge(store):
+    """Start the phone remote-control server. Returns (Bridge, lan info) or (None, None)."""
+    import secrets
+    token = store.meta_get('bridge_token')
+    if not token:
+        token = secrets.token_urlsafe(24)
+        store.meta_set('bridge_token', token)
+    addon_path = kodi.addon().getAddonInfo('path')
+    pem, key = bridge.find_cert(kodi.profile_dir(), os.path.join(addon_path, 'resources', 'bridge'))
+    if not pem:
+        kodi.log('remote bridge: no certificate found, phone remote disabled', xbmc.LOGWARNING)
+        return None, None
+    try:
+        b = bridge.Bridge(pem, key, token, xbmc.executeJSONRPC, log=kodi.log)
+        b.start()
+    except Exception as e:
+        kodi.log('remote bridge failed to start: %s' % e, xbmc.LOGWARNING)
+        return None, None
+    return b, {'port': b.port, 'token': token}
+
+
 def run():
     queue = collections.deque()
     monitor = Monitor(queue)
@@ -233,6 +257,7 @@ def run():
     recorder = Recorder(store, None, log=kodi.debug)
     tracker = Tracker(recorder, log=kodi.log)
     phone = Remote(store, monitor)
+    lan_bridge, phone.lan = start_bridge(store)
     ctx = {}
 
     def apply_settings():
@@ -303,5 +328,7 @@ def run():
             break
 
     tracker.finish()
+    if lan_bridge:
+        lan_bridge.stop()
     store.close()
     kodi.log('service stopped')

@@ -131,6 +131,7 @@ def packages_from_listing(files):
     return out
 
 
-def heartbeat(device_id, name, version, ack=None, now=None, apps=None):
+def heartbeat(device_id, name, version, ack=None, now=None, apps=None, lan=None):
+    """lan: {'ip', 'port', 'token'} for the phone's direct remote control (bridge.py), or None."""
     return {'device': device_id, 'name': name, 'version': version,
-            'last_seen': time.time() if now is None else now, 'ack': ack, 'apps': apps or []}
+            'last_seen': time.time() if now is None else now, 'ack': ack, 'apps': apps or [], 'lan': lan}

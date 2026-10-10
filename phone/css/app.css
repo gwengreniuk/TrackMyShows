@@ -285,6 +285,23 @@ body.cover-mode .toast { bottom: 10px; left: 8px; right: 8px; font-size: 13px; p
   color: var(--text); padding: 0 12px; font-size: 17px; margin: 4px 0 10px; }
 .kbd-opt { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin-bottom: 12px; }
 
+/* ---- TV remote ------------------------------------------------------- */
+.gear.kbd { text-decoration: none; font-size: 21px; }
+.remote { display: grid; gap: 14px; padding-top: 10px; }
+.remote-head { display: flex; align-items: baseline; gap: 8px; }
+.remote.offline .dpad, .remote.offline .rrow { opacity: .45; }
+.dpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 300px; width: 100%; margin: 0 auto; }
+.rk { min-height: 58px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); font-size: 20px; font-weight: 600;
+  cursor: pointer; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.rk:active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.dpad .rk { min-height: 74px; font-size: 24px; }
+.dpad .rk.ok { border-radius: 50%; background: var(--accent); color: var(--accent-ink); border: 0; }
+.rrow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.rrow .rk { font-size: 15px; min-height: 52px; }
+.rtype { display: flex; gap: 8px; }
+.rtype input { flex: 1; min-width: 0; height: 48px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+  color: var(--text); padding: 0 12px; font-size: 16px; }
+
 /* ---- people ---------------------------------------------------------- */
 .person-head { display: flex; gap: 14px; align-items: flex-end; margin-top: 12px; }
 .person-head h1 { font-size: 22px; margin: 0 0 4px; }

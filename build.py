@@ -61,6 +61,24 @@ def load_secrets():
     return client_id, client_secret, tmdb
 
 
+def bridge_cert():
+    """Self-signed certificate for the add-on's phone remote server (made once, kept in secrets/)."""
+    pem, key = os.path.join(SECRETS, 'bridge.pem'), os.path.join(SECRETS, 'bridge.key')
+    if not (os.path.exists(pem) and os.path.exists(key)):
+        import shutil
+        import subprocess
+        openssl = shutil.which('openssl')
+        if not openssl:
+            print('WARNING: openssl not found - the phone remote will be disabled in this build.')
+            return None
+        os.makedirs(SECRETS, exist_ok=True)
+        subprocess.run([openssl, 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '3650',
+                        '-keyout', key, '-out', pem, '-subj', '/CN=TrackMyShows TV remote'],
+                       check=True, capture_output=True)
+        print('Created phone-remote certificate in secrets/')
+    return pem, key
+
+
 def version():
     with open(os.path.join(SRC, 'addon.xml'), encoding='utf-8') as f:
         return re.search(r'<addon\b[^>]*\bversion="([^"]+)"', f.read()).group(1)
@@ -72,7 +90,11 @@ def build():
                    % (client_id, client_secret, tmdb))
     os.makedirs(DIST, exist_ok=True)
     out = os.path.join(DIST, '%s-%s.zip' % (ADDON_ID, version()))
+    cert = bridge_cert()
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+        if cert:
+            z.write(cert[0], ADDON_ID + '/resources/bridge/bridge.pem')
+            z.write(cert[1], ADDON_ID + '/resources/bridge/bridge.key')
         for folder, dirs, files in os.walk(SRC):
             dirs[:] = [d for d in dirs if d != '__pycache__']
             for name in files:

@@ -588,3 +588,45 @@ class KeyboardTests(unittest.TestCase):
         self.assertFalse(remote.parse_command(json.dumps({'id': 't2', 'ts': 1, 'action': 'text', 'text': 'x', 'done': False}).encode())['done'])
         self.assertIsNone(remote.parse_command(json.dumps({'id': 't3', 'ts': 1, 'action': 'text', 'text': '   '}).encode()))
         self.assertIsNone(remote.parse_command(json.dumps({'id': 't4', 'ts': 1, 'action': 'text', 'text': 'x' * 501}).encode()))
+
+
+class BridgeTests(unittest.TestCase):
+    def test_bridge_end_to_end(self):
+        """Real HTTPS round trip with a throwaway certificate, like the phone app does."""
+        import json, shutil, ssl, subprocess, tempfile, urllib.request
+        from tms import bridge
+        openssl = shutil.which('openssl')
+        if not openssl:
+            self.skipTest('openssl not available')
+        d = tempfile.mkdtemp()
+        pem, key = os.path.join(d, 'bridge.pem'), os.path.join(d, 'bridge.key')
+        subprocess.run([openssl, 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-keyout', key,
+                        '-out', pem, '-subj', '/CN=test'], check=True, capture_output=True)
+        calls = []
+        b = bridge.Bridge(pem, key, 'secret', lambda req: (calls.append(json.loads(req)), '{"id":1,"jsonrpc":"2.0","result":"pong"}')[1], port=0)
+        port = b.httpd.server_address[1]
+        b.start()
+        self.addCleanup(b.stop)
+        ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+
+        def call(method, headers, body=b''):
+            req = urllib.request.Request('https://127.0.0.1:%d/rpc' % port, data=body or None, method=method, headers=headers)
+            try:
+                with urllib.request.urlopen(req, context=ctx, timeout=5) as r:
+                    return r.status, dict(r.headers), r.read()
+            except urllib.error.HTTPError as e:
+                return e.code, dict(e.headers), e.read()
+        origin = 'https://gwengreniuk.github.io'
+        status, headers, _ = call('OPTIONS', {'Origin': origin, 'Access-Control-Request-Method': 'POST'})
+        self.assertEqual(status, 204)
+        self.assertEqual(headers.get('Access-Control-Allow-Origin'), origin)
+        self.assertIn('X-TMS-Token', headers.get('Access-Control-Allow-Headers'))
+        ping = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'JSONRPC.Ping'}).encode()
+        status, headers, body = call('POST', {'Origin': origin, 'Content-Type': 'application/json', 'X-TMS-Token': 'secret'}, ping)
+        self.assertEqual((status, json.loads(body)['result']), (200, 'pong'))
+        self.assertEqual(calls[0]['method'], 'JSONRPC.Ping')
+        status, _, _ = call('POST', {'Origin': origin, 'Content-Type': 'application/json', 'X-TMS-Token': 'wrong'}, ping)
+        self.assertEqual(status, 403)
+        self.assertEqual(len(calls), 1)  # rejected request never reached Kodi
+        status, headers, _ = call('OPTIONS', {'Origin': 'https://evil.example', 'Access-Control-Request-Method': 'POST'})
+        self.assertIsNone(headers.get('Access-Control-Allow-Origin'))

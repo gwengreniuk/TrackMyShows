@@ -8,6 +8,7 @@ import * as remote from './remote.js';
 import * as omdb from './omdb.js';
 import * as streaming from './streaming.js';
 import qrcode from './vendor/qrcode.mjs';
+import * as lan from './lan.js';
 
 const app = {
   state: null,
@@ -513,6 +514,7 @@ function render() {
   } else {
     if (r.name !== 'cover') document.body.classList.remove('cover-mode');
     const views = { watching: () => (isCover() ? coverView() : watchingView()), cover: coverView, import: () => importView(r.arg),
+                    remote: remoteView,
                     new: newView, movies: moviesView, shows: showsView, search: searchView,
                     show: () => showView(+r.arg), movie: () => movieView(+r.arg), episode: () => episodeView(r.arg),
                     person: () => personView(+r.arg),
@@ -1547,6 +1549,15 @@ const actions = {
   },
   expand: (d, el) => el.classList.toggle('clamp4'),
   showQr: () => showTransferQr(),
+  rk: (d) => remoteKey(d.a),
+  remoteRetry: () => { app.remote.status = 'loading'; remoteInit(true); },
+  remoteTv: (d) => {
+    app.remote.tv = app.remote.tvs.find((t) => t.device === d.d) || app.remote.tv;
+    app.settings.lastTv = d.d;
+    db.kvSet('last_tv', d.d);
+    app.remote.status = 'loading';
+    remoteInit(true);
+  },
   scanQr: () => scanQr(),
   doImport: () => doImport(),
   cancelImport: () => { app.pendingImport = null; history.replaceState(null, '', '#/settings'); render(); },
@@ -1627,6 +1638,12 @@ view.addEventListener('input', (ev) => {
 view.addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const form = ev.target;
+  if (form.dataset.form === 'rtype') {
+    const input = form.querySelector('input');
+    const text = input.value.trim();
+    if (text) { remoteType(text); input.value = ''; }
+    return;
+  }
   if (form.dataset.form === 'search' || form.dataset.form === 'msearch') {
     form.querySelector('input').blur();
     return;
@@ -1659,7 +1676,109 @@ view.addEventListener('submit', async (ev) => {
 });
 
 document.getElementById('syncBtn').addEventListener('click', () => runSync(true));
-document.getElementById('kbdBtn').addEventListener('click', () => keyboardSheet());
+
+// ---- TV remote (direct on home Wi-Fi via the add-on's bridge; typing falls back to Drive)
+app.remote = { tv: null, tvs: [], status: 'loading', error: '' };
+
+async function remoteInit(force = false) {
+  const r = app.remote;
+  if (!force && r.status !== 'loading') return;
+  r.status = 'loading';
+  // Use the last known TVs right away, refresh from Drive in the background
+  r.tvs = await db.kvGet('lan_tvs', []);
+  const pick = () => r.tvs.find((t) => t.device === app.settings.lastTv) || r.tvs[0] || null;
+  r.tv = pick();
+  renderSoon();
+  if (drive.hasValidToken()) {
+    try {
+      const all = (await remote.devices()).filter((d) => lan.hasLan(d));
+      if (all.length) {
+        r.tvs = all.map(({ device, name, lan: l, online }) => ({ device, name, lan: l, online }));
+        await db.kvSet('lan_tvs', r.tvs);
+        r.tv = pick();
+      }
+    } catch { /* keep cached TVs */ }
+  }
+  await remotePing();
+}
+
+async function remotePing() {
+  const r = app.remote;
+  if (!r.tv) { r.status = 'none'; return renderSoon(); }
+  try {
+    await lan.rpc(r.tv, 'JSONRPC.Ping', null, 3000);
+    r.status = 'ok';
+    r.error = '';
+  } catch (err) {
+    r.status = 'cert'; // usually: certificate not accepted yet, or not on home Wi-Fi
+    r.error = err.name === 'AbortError' ? 'The TV did not answer.' : err.message;
+  }
+  renderSoon();
+}
+
+function remoteView() {
+  const r = app.remote;
+  if (r.status === 'loading') remoteInit();
+  const btn = (a, label, cls = '', aria = '') => `<button type="button" class="rk ${cls}" data-action="rk" data-a="${a}" aria-label="${aria || a}">${label}</button>`;
+  let status = '';
+  if (r.status === 'none') {
+    status = `<div class="note">No TV with the remote enabled yet. Update the TrackMyShows add-on on the TV, open Kodi, then
+      ${drive.hasValidToken() ? '' : 'sign in to Google and '}tap <button type="button" class="link" data-action="remoteRetry">Retry</button>.</div>`;
+  } else if (r.status === 'cert') {
+    status = `<div class="note">
+      <b>Connect to ${esc(r.tv.name || 'the TV')}</b> (first time on this phone, or away from home Wi-Fi):<br>
+      1. Tap <b>Allow connection</b>. A page opens; if Chrome warns that it's not private, tap <b>Advanced → Proceed</b>.<br>
+      2. Come back and tap <b>Retry</b>.
+      <div class="btns"><a class="btn small primary" href="${lan.certUrl(r.tv)}" target="_blank" rel="noopener">Allow connection</a>
+      <button type="button" class="btn small" data-action="remoteRetry">Retry</button></div>
+      <p class="muted small">${esc(r.error)}</p></div>`;
+  }
+  const tvPicker = r.tvs.length > 1 ? `<div class="chips">${r.tvs.map((t) =>
+    `<button type="button" class="chip${t.device === r.tv?.device ? ' on' : ''}" data-action="remoteTv" data-d="${esc(t.device)}">${esc(t.name || 'Kodi')}</button>`).join('')}</div>` : '';
+  const live = r.status === 'ok';
+  return `<div class="remote${live ? '' : ' offline'}">
+    <div class="remote-head"><b>${esc(r.tv?.name || 'TV remote')}</b> <span class="muted small">${live ? '● connected' : r.status === 'loading' ? 'connecting…' : ''}</span></div>
+    ${tvPicker}${status}
+    <div class="dpad">
+      <span></span>${btn('up', '▲', '', 'Up')}<span></span>
+      ${btn('left', '◀', '', 'Left')}${btn('select', 'OK', 'ok', 'OK')}${btn('right', '▶', '', 'Right')}
+      <span></span>${btn('down', '▼', '', 'Down')}<span></span>
+    </div>
+    <div class="rrow">${btn('back', '↩ Back')}${btn('home', '⌂ Home')}${btn('contextmenu', '☰ Menu')}${btn('info', 'ⓘ Info')}</div>
+    <div class="rrow">${btn('stepback', '⏪', '', 'Back 10s')}${btn('playpause', '⏯', '', 'Play/pause')}${btn('stop', '⏹', '', 'Stop')}${btn('stepforward', '⏩', '', 'Forward 30s')}</div>
+    <div class="rrow">${btn('volumedown', '🔉', '', 'Volume down')}${btn('mute', '🔇', '', 'Mute')}${btn('volumeup', '🔊', '', 'Volume up')}${btn('osd', '⚙ OSD', '', 'On-screen menu')}</div>
+    <form class="rtype" data-form="rtype">
+      <input id="rtext" type="text" autocomplete="off" enterkeyhint="send" placeholder="Type into a Kodi search box…" maxlength="500">
+      <button type="submit" class="btn primary">Send</button>
+    </form>
+    <p class="muted small">${live ? 'Typing goes straight into the open Kodi keyboard and presses Done.' : 'Not connected: typing is sent through Google Drive instead (about 6–10 seconds).'}</p>
+  </div>`;
+}
+
+async function remoteKey(name) {
+  const r = app.remote;
+  if (r.status !== 'ok') return toast('Not connected to the TV');
+  navigator.vibrate?.(8);
+  try {
+    if (name === 'home') await lan.home(r.tv);
+    else await lan.action(r.tv, name);
+  } catch (err) {
+    r.status = 'cert';
+    r.error = err.message;
+    render();
+  }
+}
+
+async function remoteType(text) {
+  const r = app.remote;
+  if (r.status === 'ok') {
+    try {
+      await lan.sendText(r.tv, text, true);
+      return toast(`Typed "${text}"`);
+    } catch { /* fall through to Drive */ }
+  }
+  return sendToTv(`"${text}"`, { action: 'text', text, done: true });
+}
 
 // ---- type into Kodi's on-screen keyboard from the phone
 function keyboardSheet() {
@@ -1697,6 +1816,7 @@ window.addEventListener('hashchange', () => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
+  if (route().name === 'remote' && app.remote.status !== 'ok') remotePing();
   loadTv();
   if (drive.hasValidToken() && Date.now() - (app.sync.last || 0) > 5 * 60000) runSync(false);
 });
